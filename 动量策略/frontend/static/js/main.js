@@ -836,12 +836,11 @@ function formatMomentum(value) {
 
 function getTrendColor(trend) {
     const colors = {
-        '极强上涨': '#4ade80',
-        '较强上涨': '#73d13d',
-        '微弱上涨': '#a3d959',
-        '微弱下跌': '#ff7875',
-        '较强下跌': '#f87171',
-        '极强下跌': '#ef4444'
+        '热': '#ef4444',
+        '温': '#facc15',
+        '平': '#333333',
+        '凉': '#60a5fa',
+        '寒': '#1e3a8a'
     };
     return colors[trend] || '#6b6b80';
 }

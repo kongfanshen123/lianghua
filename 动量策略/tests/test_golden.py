@@ -20,7 +20,7 @@ CURRENT_DIR = BASE_DIR / "current"
 BASELINE_DATA = {
     "test_normal_momentum": {
         "momentum_20d": 6.1813,
-        "trend_strength": "较强上涨",
+        "trend_strength": "温",
         "volume_confirmed": 1,
         "volume_change_pct": 8.547,
         "status": "valid",
@@ -28,7 +28,7 @@ BASELINE_DATA = {
     },
     "test_strong_upward": {
         "momentum_20d": 12.7073,
-        "trend_strength": "较强上涨",
+        "trend_strength": "温",
         "volume_confirmed": 1,
         "volume_change_pct": 8.547,
         "status": "valid",
@@ -36,7 +36,7 @@ BASELINE_DATA = {
     },
     "test_strong_downward": {
         "momentum_20d": -11.3375,
-        "trend_strength": "较强下跌",
+        "trend_strength": "寒",
         "volume_confirmed": 0,
         "volume_change_pct": 8.547,
         "status": "valid",
@@ -52,7 +52,7 @@ BASELINE_DATA = {
     },
     "test_zero_price": {
         "momentum_20d": 22.017,
-        "trend_strength": "极强上涨",
+        "trend_strength": "热",
         "volume_confirmed": 1,
         "volume_change_pct": 8.547,
         "status": "valid",
@@ -60,7 +60,7 @@ BASELINE_DATA = {
     },
     "test_volume_divergence": {
         "momentum_20d": 6.1813,
-        "trend_strength": "较强上涨",
+        "trend_strength": "温",
         "volume_confirmed": 0,
         "volume_change_pct": -45.7265,
         "status": "valid",

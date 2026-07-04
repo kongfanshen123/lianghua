@@ -81,17 +81,15 @@ class MomentumStrategy(BaseStrategy):
 
     def _evaluate_trend_strength(self, momentum: float) -> str:
         if momentum >= 15:
-            return "极强上涨"
+            return "热"
         elif momentum >= 5:
-            return "较强上涨"
+            return "温"
         elif momentum >= 0:
-            return "微弱上涨"
+            return "平"
         elif momentum >= -5:
-            return "微弱下跌"
-        elif momentum >= -15:
-            return "较强下跌"
+            return "凉"
         else:
-            return "极强下跌"
+            return "寒"
 
     def calculate_consecutive_days(self, current_momentum: float, historical_momentums: List[float]) -> int:
         """计算当前趋势方向的连续天数（含当天）。
