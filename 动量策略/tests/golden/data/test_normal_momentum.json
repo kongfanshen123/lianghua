@@ -1,0 +1,152 @@
+[
+  {
+    "trade_date": "2025-01-01",
+    "close_price": 100.0,
+    "volume": 1000000
+  },
+  {
+    "trade_date": "2025-01-02",
+    "close_price": 100.3,
+    "volume": 1010000
+  },
+  {
+    "trade_date": "2025-01-03",
+    "close_price": 100.6,
+    "volume": 1020000
+  },
+  {
+    "trade_date": "2025-01-04",
+    "close_price": 100.9,
+    "volume": 1030000
+  },
+  {
+    "trade_date": "2025-01-05",
+    "close_price": 101.21,
+    "volume": 1040000
+  },
+  {
+    "trade_date": "2025-01-06",
+    "close_price": 101.51,
+    "volume": 1050000
+  },
+  {
+    "trade_date": "2025-01-07",
+    "close_price": 101.81,
+    "volume": 1060000
+  },
+  {
+    "trade_date": "2025-01-08",
+    "close_price": 102.12,
+    "volume": 1070000
+  },
+  {
+    "trade_date": "2025-01-09",
+    "close_price": 102.43,
+    "volume": 1080000
+  },
+  {
+    "trade_date": "2025-01-10",
+    "close_price": 102.73,
+    "volume": 1090000
+  },
+  {
+    "trade_date": "2025-01-11",
+    "close_price": 103.04,
+    "volume": 1100000
+  },
+  {
+    "trade_date": "2025-01-12",
+    "close_price": 103.35,
+    "volume": 1110000
+  },
+  {
+    "trade_date": "2025-01-13",
+    "close_price": 103.66,
+    "volume": 1120000
+  },
+  {
+    "trade_date": "2025-01-14",
+    "close_price": 103.97,
+    "volume": 1130000
+  },
+  {
+    "trade_date": "2025-01-15",
+    "close_price": 104.28,
+    "volume": 1140000
+  },
+  {
+    "trade_date": "2025-01-16",
+    "close_price": 104.6,
+    "volume": 1150000
+  },
+  {
+    "trade_date": "2025-01-17",
+    "close_price": 104.91,
+    "volume": 1160000
+  },
+  {
+    "trade_date": "2025-01-18",
+    "close_price": 105.22,
+    "volume": 1170000
+  },
+  {
+    "trade_date": "2025-01-19",
+    "close_price": 105.54,
+    "volume": 1180000
+  },
+  {
+    "trade_date": "2025-01-20",
+    "close_price": 105.86,
+    "volume": 1190000
+  },
+  {
+    "trade_date": "2025-01-21",
+    "close_price": 106.17,
+    "volume": 1200000
+  },
+  {
+    "trade_date": "2025-01-22",
+    "close_price": 106.49,
+    "volume": 1210000
+  },
+  {
+    "trade_date": "2025-01-23",
+    "close_price": 106.81,
+    "volume": 1220000
+  },
+  {
+    "trade_date": "2025-01-24",
+    "close_price": 107.13,
+    "volume": 1230000
+  },
+  {
+    "trade_date": "2025-01-25",
+    "close_price": 107.45,
+    "volume": 1240000
+  },
+  {
+    "trade_date": "2025-01-26",
+    "close_price": 107.78,
+    "volume": 1250000
+  },
+  {
+    "trade_date": "2025-01-27",
+    "close_price": 108.1,
+    "volume": 1260000
+  },
+  {
+    "trade_date": "2025-01-28",
+    "close_price": 108.42,
+    "volume": 1270000
+  },
+  {
+    "trade_date": "2025-01-29",
+    "close_price": 108.75,
+    "volume": 1280000
+  },
+  {
+    "trade_date": "2025-01-30",
+    "close_price": 109.08,
+    "volume": 1290000
+  }
+]

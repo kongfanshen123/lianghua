@@ -1,0 +1,8 @@
+{
+  "momentum_20d": 0.0,
+  "trend_strength": "",
+  "volume_confirmed": 0,
+  "volume_change_pct": 0.0,
+  "status": "insufficient_data",
+  "message": "Need at least 21 price points, got 10"
+}

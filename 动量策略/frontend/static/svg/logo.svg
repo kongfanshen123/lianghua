@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+    <defs>
+        <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#a78bfa;stop-opacity:1" />
+            <stop offset="50%" style="stop-color:#6366f1;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#4a9eff;stop-opacity:1" />
+        </linearGradient>
+        <filter id="glow">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+        <filter id="strongGlow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>
+    <rect width="80" height="80" rx="12" fill="url(#waveGradient)" opacity="0.1"/>
+    <path d="M10 50 Q18 42 26 48 T42 38 T58 46 T70 36" 
+          fill="none" 
+          stroke="url(#waveGradient)" 
+          stroke-width="2" 
+          filter="url(#glow)"
+          class="wave-path"/>
+    <path d="M10 50 Q18 42 26 48 T42 38 T58 46 T70 36" 
+          fill="none" 
+          stroke="#ffffff" 
+          stroke-width="1" 
+          opacity="0.3"/>
+    <circle cx="26" cy="48" r="3" fill="#ffffff" filter="url(#strongGlow)" class="particle particle-1"/>
+    <circle cx="42" cy="38" r="4" fill="#a78bfa" filter="url(#strongGlow)" class="particle particle-2"/>
+    <circle cx="58" cy="46" r="3" fill="#ffffff" filter="url(#strongGlow)" class="particle particle-3"/>
+    <circle cx="70" cy="36" r="5" fill="#4ade80" filter="url(#strongGlow)" class="particle particle-4"/>
+    <circle cx="10" cy="50" r="2" fill="#4a9eff" filter="url(#glow)" class="particle particle-5"/>
+    <circle class="orbit orbit-1" cx="42" cy="38" r="8" fill="none" stroke="#a78bfa" stroke-width="0.5" opacity="0.5"/>
+    <circle class="orbit orbit-2" cx="70" cy="36" r="10" fill="none" stroke="#4ade80" stroke-width="0.5" opacity="0.5"/>
+</svg>

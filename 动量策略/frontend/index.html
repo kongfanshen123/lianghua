@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动量策略 - 量化分析平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+                        <defs>
+                            <linearGradient id="trendGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+                                <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:#22d3ee;stop-opacity:1" />
+                            </linearGradient>
+                            <filter id="trendGlow">
+                                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                                <feMerge>
+                                    <feMergeNode in="coloredBlur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                        <rect width="80" height="80" rx="12" fill="#0f0f1a"/>
+                        <path d="M15 60 L40 35 L65 15" stroke="url(#trendGradient)" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#trendGlow)" class="trend-line"/>
+                        <circle cx="65" cy="15" r="6" fill="#4ade80" filter="url(#trendGlow)" class="signal-dot"/>
+                    </svg>
+                </div>
+                <span class="logo-text">动量策略</span>
+            </div>
+            <nav class="nav-menu">
+                <button class="nav-item active" data-target="tabMomentum">
+                    <i class="fa fa-trophy"></i>
+                    <span>动量排名</span>
+                </button>
+                <button class="nav-item" data-target="tabQuality">
+                    <i class="fa fa-shield"></i>
+                    <span>质量监控</span>
+                </button>
+                <button class="nav-item" data-target="tabData">
+                    <i class="fa fa-database"></i>
+                    <span>数据管理</span>
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="footer-item">
+                    <i class="fa fa-calendar"></i>
+                    <span id="currentDate"></span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="search-wrapper">
+                    <input type="text" id="globalSearch" placeholder="搜索标的代码或名称..." class="search-input" autocomplete="off">
+                    <button class="search-btn" onclick="handleGlobalSearch()"><i class="fa fa-search"></i></button>
+                    <div class="search-suggestions" id="searchSuggestions"></div>
+                </div>
+                <div class="top-bar-right">
+                    <div class="system-status" id="systemStatus">
+                        <span class="status-indicator offline"></span>
+                        <span>系统离线</span>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="action-btn btn-repair" onclick="openRepairModal()" title="修复数据">
+                            <i class="fa fa-wrench"></i>
+                        </button>
+                        <button class="action-btn btn-update" onclick="openUpdateModal()" title="手动更新">
+                            <i class="fa fa-refresh"></i>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="page-content">
+                <div id="tabMomentum" class="page-tab active">
+                    <div class="page-header">
+                        <div class="header-left">
+                            <h1 class="page-title">动量排名</h1>
+                            <div class="category-tabs" id="momentumCategoryTabs">
+                                <button class="category-tab" data-category="all">全部</button>
+                                <button class="category-tab active" data-category="market">大盘指标</button>
+                                <button class="category-tab" data-category="industry">行业指标</button>
+                            </div>
+                        </div>
+                        <div class="header-right">
+                            <span class="data-timestamp" id="momentumTimestamp">数据更新时间: --</span>
+                        </div>
+                    </div>
+
+                    <div class="charts-grid">
+                        <div class="chart-card large">
+                            <div class="card-title">
+                                <h3>动量排名分布</h3>
+                            </div>
+                            <div class="chart-container" id="momentumBarChart"></div>
+                        </div>
+                    </div>
+
+                    <div class="data-card">
+                        <div class="card-title">
+                            <h3>策略结果详情</h3>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="momentumTable">
+                                <thead>
+                                    <tr>
+                                        <th>排名</th>
+                                        <th>标的</th>
+                                        <th>分类</th>
+                                        <th>20日动量</th>
+                                        <th>量价确认</th>
+                                        <th>成交量变化</th>
+                                        <th>趋势强度</th>
+                                        <th>排名变化</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tabQuality" class="page-tab">
+                    <div class="page-header">
+                        <h1 class="page-title">数据质量监控</h1>
+                        <div class="header-right">
+                            <button class="btn btn-primary" onclick="openRepairModal()"><i class="fa fa-wrench"></i> 一键修复</button>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="metric-card good">
+                            <div class="metric-icon"><i class="fa fa-tags"></i></div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="statActiveSymbols">0</div>
+                                <div class="metric-label">活跃标的</div>
+                            </div>
+                        </div>
+                        <div class="metric-card good">
+                            <div class="metric-icon"><i class="fa fa-database"></i></div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="statTotalRecords">0</div>
+                                <div class="metric-label">价格记录数</div>
+                            </div>
+                        </div>
+                        <div class="metric-card warning">
+                            <div class="metric-icon"><i class="fa fa-clock-o"></i></div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="statDaysDelay">0</div>
+                                <div class="metric-label">数据延迟天数</div>
+                            </div>
+                        </div>
+                        <div class="metric-card danger">
+                            <div class="metric-icon"><i class="fa fa-exclamation-triangle"></i></div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="statIssues">0</div>
+                                <div class="metric-label">异常总数</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="quality-overview">
+                        <div class="overview-section">
+                            <div class="section-title">
+                                <h3>异常分布</h3>
+                            </div>
+                            <div class="chart-container small" id="issueDistributionChart"></div>
+                        </div>
+                        <div class="overview-section">
+                            <div class="section-title">
+                                <h3>数据质量趋势</h3>
+                            </div>
+                            <div class="chart-container small" id="qualityTrendChart"></div>
+                        </div>
+                    </div>
+
+                    <div class="issue-summary-cards">
+                        <div class="issue-summary-card no-data">
+                            <div class="issue-summary-icon"><i class="fa fa-database"></i></div>
+                            <div class="issue-summary-info">
+                                <div class="issue-summary-count" id="issueNoDataCount">0</div>
+                                <div class="issue-summary-label">无数据</div>
+                            </div>
+                        </div>
+                        <div class="issue-summary-card negative-price">
+                            <div class="issue-summary-icon"><i class="fa fa-dollar-sign"></i></div>
+                            <div class="issue-summary-info">
+                                <div class="issue-summary-count" id="issueNegativePriceCount">0</div>
+                                <div class="issue-summary-label">价格异常</div>
+                            </div>
+                        </div>
+                        <div class="issue-summary-card zero-volume">
+                            <div class="issue-summary-icon"><i class="fa fa-bar-chart"></i></div>
+                            <div class="issue-summary-info">
+                                <div class="issue-summary-count" id="issueZeroVolumeCount">0</div>
+                                <div class="issue-summary-label">零成交量</div>
+                            </div>
+                        </div>
+                        <div class="issue-summary-card duplicate">
+                            <div class="issue-summary-icon"><i class="fa fa-copy"></i></div>
+                            <div class="issue-summary-info">
+                                <div class="issue-summary-count" id="issueDuplicateCount">0</div>
+                                <div class="issue-summary-label">重复数据</div>
+                            </div>
+                        </div>
+                        <div class="issue-summary-card price-jump">
+                            <div class="issue-summary-icon"><i class="fa fa-bolt"></i></div>
+                            <div class="issue-summary-info">
+                                <div class="issue-summary-count" id="issuePriceJumpCount">0</div>
+                                <div class="issue-summary-label">价格跳变</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row-grid">
+                        <div class="data-card">
+                            <div class="card-title">
+                                <h3>覆盖率统计</h3>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="coverageTable">
+                                    <thead>
+                                        <tr>
+                                            <th>标的</th>
+                                            <th>分类</th>
+                                            <th>记录数</th>
+                                            <th>开始日期</th>
+                                            <th>结束日期</th>
+                                            <th>覆盖率</th>
+                                            <th>状态</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="data-card">
+                            <div class="card-title">
+                                <h3>异常数据列表</h3>
+                                <div class="card-actions">
+                                    <select id="issueType" class="form-select" onchange="loadQualityDetails()">
+                                        <option value="">全部类型</option>
+                                        <option value="no_data">无数据</option>
+                                        <option value="negative_price">价格异常</option>
+                                        <option value="zero_volume">零成交量</option>
+                                        <option value="duplicate">重复数据</option>
+                                        <option value="price_jump">价格跳变</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="issueTable">
+                                    <thead>
+                                        <tr>
+                                            <th>类型</th>
+                                            <th>标的</th>
+                                            <th>日期</th>
+                                            <th>描述</th>
+                                            <th>数值</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tabData" class="page-tab">
+                    <div class="page-header">
+                        <h1 class="page-title">数据管理</h1>
+                        <div class="header-tabs">
+                            <button class="header-tab" data-subtab="dataSymbols">标的管理</button>
+                            <button class="header-tab" data-subtab="dataPrices">价格数据</button>
+                        </div>
+                    </div>
+
+                    <div id="dataSymbols" class="sub-page">
+                        <div class="data-card">
+                            <div class="card-title">
+                                <h3>标的列表</h3>
+                                <div class="card-actions">
+                                    <select id="symbolCategory" class="form-select" onchange="loadSymbols()">
+                                        <option value="">全部分类</option>
+                                        <option value="market">大盘指标</option>
+                                        <option value="industry">行业指标</option>
+                                    </select>
+                                    <select id="symbolStatus" class="form-select" onchange="loadSymbols()">
+                                        <option value="">全部状态</option>
+                                        <option value="1">启用</option>
+                                        <option value="0">禁用</option>
+                                    </select>
+                                    <button class="btn btn-primary" onclick="loadSymbols()">
+                                        <i class="fa fa-refresh"></i> 刷新
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="symbolTable">
+                                    <thead>
+                                        <tr>
+                                            <th>代码</th>
+                                            <th>名称</th>
+                                            <th>分类</th>
+                                            <th>市场</th>
+                                            <th>数据源</th>
+                                            <th>状态</th>
+                                            <th>数据量</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="dataPrices" class="sub-page hidden">
+                        <div class="data-card">
+                            <div class="card-title">
+                                <h3>价格数据查询</h3>
+                                <div class="card-actions">
+                                    <select id="priceSymbol" class="form-select">
+                                        <option value="">全部标的</option>
+                                    </select>
+                                    <div class="date-picker-wrapper">
+                                        <input type="hidden" id="priceStartDate">
+                                        <div class="date-picker" data-target="priceStartDate">
+                                            <span class="date-picker-value">选择日期</span>
+                                            <i class="fa fa-calendar"></i>
+                                        </div>
+                                    </div>
+                                    <div class="date-picker-wrapper">
+                                        <input type="hidden" id="priceEndDate">
+                                        <div class="date-picker" data-target="priceEndDate">
+                                            <span class="date-picker-value">选择日期</span>
+                                            <i class="fa fa-calendar"></i>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-primary" onclick="loadPrices()">
+                                        <i class="fa fa-search"></i> 查询
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="chart-container large" id="klineChart"></div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="priceTable">
+                                    <thead>
+                                        <tr>
+                                            <th>日期</th>
+                                            <th>标的</th>
+                                            <th>开盘</th>
+                                            <th>最高</th>
+                                            <th>最低</th>
+                                            <th>收盘</th>
+                                            <th>成交量</th>
+                                            <th>成交额</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="pagination" id="pricePagination"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="updateModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>手动更新数据</h3>
+                <button class="modal-close" onclick="closeUpdateModal()"><i class="fa fa-close"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="update-options">
+                    <button class="update-option-btn" onclick="executeTask('fetch')">
+                        <i class="fa fa-download"></i>
+                        <span>更新价格数据</span>
+                        <p>获取标的最新收盘价</p>
+                    </button>
+                    <button class="update-option-btn" onclick="executeTask('calculate')">
+                        <i class="fa fa-calculator"></i>
+                        <span>重新计算策略</span>
+                        <p>基于最新数据计算动量</p>
+                    </button>
+                    <button class="update-option-btn primary" onclick="executeTask('full')">
+                        <i class="fa fa-refresh"></i>
+                        <span>完整更新流程</span>
+                        <p>获取数据→计算策略→推送通知</p>
+                    </button>
+                </div>
+                <div class="modal-result" id="updateResult"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="repairModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>数据修复</h3>
+                <button class="modal-close" onclick="closeRepairModal()"><i class="fa fa-close"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">检测并修复异常数据，包括重复数据、缺失数据等问题。</p>
+                <button class="btn btn-danger btn-full-width" onclick="executeTask('repair')">
+                    <i class="fa fa-wrench"></i> 开始修复
+                </button>
+                <div class="modal-result" id="repairResult"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
