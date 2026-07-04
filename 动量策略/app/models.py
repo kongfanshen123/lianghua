@@ -55,8 +55,9 @@ class StrategyResult(Base):
     trend_strength = Column(String(20))
     consecutive_days = Column(Integer, default=0)
     status = Column(String(20), default="valid")
+    strategy_type = Column(String(30), default="momentum")
     created_at = Column(TIMESTAMP, default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("symbol_id", "trade_date", name="uq_result_symbol_date"),
+        UniqueConstraint("symbol_id", "trade_date", "strategy_type", name="uq_result_symbol_date_strategy"),
     )

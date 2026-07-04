@@ -411,6 +411,34 @@ body {
     color: white;
 }
 
+.strategy-tabs {
+    display: flex;
+    gap: 8px;
+}
+
+.strategy-tab {
+    padding: 6px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+}
+
+.strategy-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.strategy-tab.active {
+    background: var(--accent-green);
+    border-color: var(--accent-green);
+    color: white;
+}
+
 .data-timestamp {
     font-size: 12px;
     color: var(--text-muted);

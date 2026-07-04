@@ -230,6 +230,7 @@ async def get_prices_counts():
 async def get_results(
     trade_date: str = Query(None, description="交易日期"),
     category: str = Query(None, description="分类筛选"),
+    strategy: str = Query("momentum", description="策略类型: momentum/weighted_score"),
     page: int = Query(1, description="页码"),
     page_size: int = Query(50, description="每页大小")
 ):
@@ -240,8 +241,9 @@ async def get_results(
         SELECT sr.*, s.symbol, s.name, s.category 
         FROM strategy_results sr 
         JOIN symbols s ON sr.symbol_id = s.id
+        WHERE sr.strategy_type = ?
     """
-    params = []
+    params = [strategy]
     conditions = []
     
     if trade_date:
@@ -252,7 +254,7 @@ async def get_results(
         params.append(category)
     
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        query += " AND " + " AND ".join(conditions)
     
     query_count = "SELECT COUNT(*) FROM (" + query + ") as t"
     cursor.execute(query_count, params)
@@ -281,6 +283,7 @@ async def get_results_history(
     category: str = Query(None, description="分类筛选: market/industry"),
     start_date: str = Query(None, description="开始日期"),
     end_date: str = Query(None, description="结束日期"),
+    strategy: str = Query("momentum", description="策略类型: momentum/weighted_score"),
     page: int = Query(1, description="页码"),
     page_size: int = Query(50, description="每页大小")
 ):
@@ -291,9 +294,9 @@ async def get_results_history(
         SELECT sr.*, s.symbol, s.name, s.category 
         FROM strategy_results sr 
         JOIN symbols s ON sr.symbol_id = s.id
-        WHERE sr.status = 'valid'
+        WHERE sr.status = 'valid' AND sr.strategy_type = ?
     """
-    params = []
+    params = [strategy]
     
     if symbol:
         query += " AND s.symbol = ?"
@@ -331,21 +334,22 @@ async def get_results_history(
 
 @app.get("/api/results/latest")
 async def get_latest_results(
-    category: str = Query(None, description="分类筛选: market/industry/all")
+    category: str = Query(None, description="分类筛选: market/industry/all"),
+    strategy: str = Query("momentum", description="策略类型: momentum/weighted_score")
 ):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT MAX(trade_date) FROM strategy_results")
+    cursor.execute("SELECT MAX(trade_date) FROM strategy_results WHERE strategy_type = ?", (strategy,))
     latest_date = cursor.fetchone()[0]
     
     query = """
         SELECT sr.*, s.symbol, s.name, s.category 
         FROM strategy_results sr 
         JOIN symbols s ON sr.symbol_id = s.id
-        WHERE sr.trade_date = ?
+        WHERE sr.trade_date = ? AND sr.strategy_type = ?
     """
-    params = [latest_date]
+    params = [latest_date, strategy]
     
     if category and category != "all":
         query += " AND s.category = ?"
@@ -361,11 +365,13 @@ async def get_latest_results(
 
 
 @app.get("/api/results/category-summary")
-async def get_results_category_summary():
+async def get_results_category_summary(
+    strategy: str = Query("momentum", description="策略类型: momentum/weighted_score")
+):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT MAX(trade_date) FROM strategy_results")
+    cursor.execute("SELECT MAX(trade_date) FROM strategy_results WHERE strategy_type = ?", (strategy,))
     latest_date = cursor.fetchone()[0]
     
     cursor.execute("""
@@ -378,9 +384,9 @@ async def get_results_category_summary():
                MIN(sr.momentum_20d) as min_momentum
         FROM strategy_results sr 
         JOIN symbols s ON sr.symbol_id = s.id
-        WHERE sr.trade_date = ? AND sr.status = 'valid'
+        WHERE sr.trade_date = ? AND sr.status = 'valid' AND sr.strategy_type = ?
         GROUP BY s.category
-    """, (latest_date,))
+    """, (latest_date, strategy))
     rows = cursor.fetchall()
     
     category_map = {
@@ -749,6 +755,25 @@ async def trigger_backfill_momentum(
 ):
     try:
         cmd = ["python3", "main.py", "backfill-momentum"]
+        if symbol:
+            cmd.extend(["--symbol", symbol])
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=_BASE_DIR, timeout=600)
+        
+        if result.returncode == 0:
+            return {"status": "success", "message": result.stdout}
+        else:
+            return {"status": "error", "message": result.stderr}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/tasks/backfill-weighted")
+async def trigger_backfill_weighted(
+    symbol: str = Query(None, description="指定标的代码，为空则全部回溯")
+):
+    try:
+        cmd = ["python3", "main.py", "backfill-weighted"]
         if symbol:
             cmd.extend(["--symbol", symbol])
         

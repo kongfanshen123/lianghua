@@ -34,6 +34,9 @@ def main_cli():
     parser_backfill_momentum = subparsers.add_parser("backfill-momentum", help="Backfill historical momentum results")
     parser_backfill_momentum.add_argument("--symbol", type=str, default=None, help="Specific symbol to backfill")
 
+    parser_backfill_weighted = subparsers.add_parser("backfill-weighted", help="Backfill historical weighted score results")
+    parser_backfill_weighted.add_argument("--symbol", type=str, default=None, help="Specific symbol to backfill")
+
     parser_repair = subparsers.add_parser("repair", help="Repair anomalous data")
     parser_repair.add_argument("--symbol", type=str, default=None, help="Specific symbol to repair")
 
@@ -123,6 +126,13 @@ def main_cli():
             print("Momentum backfill completed successfully")
         else:
             print("Momentum backfill failed")
+    elif args.command == "backfill-weighted":
+        from app.pipeline import backfill_weighted_score
+        result = backfill_weighted_score(args.symbol)
+        if result:
+            print("Weighted score backfill completed successfully")
+        else:
+            print("Weighted score backfill failed")
     elif args.command == "repair":
         result = repair_data(args.symbol)
         if result:

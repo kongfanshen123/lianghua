@@ -2,6 +2,7 @@ let currentPricePage = 1;
 let currentHistoryPage = 1;
 let isLoading = false;
 let currentCategory = 'all';
+let currentStrategy = 'momentum';
 let qualityRefreshTimer = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -51,6 +52,13 @@ function initNavigation() {
         btn.addEventListener('click', function() {
             const category = this.dataset.category;
             switchCategory(category);
+        });
+    });
+    
+    document.querySelectorAll('.strategy-tab').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const strategy = this.dataset.strategy;
+            switchStrategy(strategy);
         });
     });
 }
@@ -132,6 +140,19 @@ function switchCategory(category) {
     document.querySelectorAll('.category-tab').forEach(btn => btn.classList.remove('active'));
     document.querySelector(`.category-tab[data-category="${category}"]`).classList.add('active');
     loadLatestResultsForMomentum();
+}
+
+function switchStrategy(strategy) {
+    currentStrategy = strategy;
+    document.querySelectorAll('.strategy-tab').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.strategy-tab[data-strategy="${strategy}"]`).classList.add('active');
+    // 更新表格标题
+    const scoreHeader = document.querySelector('#momentumTable th:nth-child(4)');
+    if (scoreHeader) {
+        scoreHeader.textContent = strategy === 'weighted_score' ? '加权评分' : '20日动量';
+    }
+    loadLatestResultsForMomentum();
+    loadHistoryResults(1);
 }
 
 function debounce(func, wait) {
@@ -731,7 +752,7 @@ async function loadCoverage() {
 
 async function loadLatestResultsForMomentum() {
     try {
-        const result = await getLatestResults(currentCategory === 'all' ? null : currentCategory);
+        const result = await getLatestResults(currentCategory === 'all' ? null : currentCategory, currentStrategy);
         
         if (result.data && result.data.length > 0) {
             const tradeDate = result.trade_date || '';
@@ -992,7 +1013,7 @@ async function loadHistoryResults(page = 1) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#6b6b80;"><i class="fa fa-spinner fa-spin"></i> 加载中...</td></tr>';
     
     try {
-        const params = { page, page_size: 50 };
+        const params = { page, page_size: 50, strategy: currentStrategy };
         if (symbol) params.symbol = symbol;
         if (category) params.category = category;
         if (startDate) params.start_date = startDate;

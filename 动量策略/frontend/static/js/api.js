@@ -91,41 +91,46 @@ async function getPricesCount() {
     return await fetchAPI('/prices/count');
 }
 
-async function getResults(tradeDate = null, category = null, page = 1, pageSize = 50) {
-    const params = { page, page_size: pageSize };
+async function getResults(tradeDate = null, category = null, page = 1, pageSize = 50, strategy = 'momentum') {
+    const params = { page, page_size: pageSize, strategy };
     if (tradeDate) params.trade_date = tradeDate;
     if (category) params.category = category;
     return await fetchAPI('/results', params);
 }
 
-async function getLatestResults(category = null) {
-    const params = {};
+async function getLatestResults(category = null, strategy = 'momentum') {
+    const params = { strategy };
     if (category) params.category = category;
     
-    if (isCacheValid(cache.latestResultsTimestamp) && !category) {
-        return cache.latestResults;
+    const cacheKey = `latestResults_${strategy}`;
+    const tsKey = `latestResultsTimestamp_${strategy}`;
+    if (isCacheValid(cache[tsKey]) && !category) {
+        return cache[cacheKey];
     }
     
     const result = await fetchAPI('/results/latest', params);
     if (!category) {
-        cache.latestResults = result;
-        cache.latestResultsTimestamp = Date.now();
+        cache[cacheKey] = result;
+        cache[tsKey] = Date.now();
     }
     return result;
 }
 
 async function getResultsHistory(params = {}) {
+    if (!params.strategy) params.strategy = 'momentum';
     return await fetchAPI('/results/history', params);
 }
 
-async function getCategorySummary() {
-    if (isCacheValid(cache.categorySummaryTimestamp)) {
-        return cache.categorySummary;
+async function getCategorySummary(strategy = 'momentum') {
+    const cacheKey = `categorySummary_${strategy}`;
+    const tsKey = `categorySummaryTimestamp_${strategy}`;
+    if (isCacheValid(cache[tsKey])) {
+        return cache[cacheKey];
     }
     
-    const result = await fetchAPI('/results/category-summary');
-    cache.categorySummary = result;
-    cache.categorySummaryTimestamp = Date.now();
+    const result = await fetchAPI('/results/category-summary', { strategy });
+    cache[cacheKey] = result;
+    cache[tsKey] = Date.now();
     return result;
 }
 

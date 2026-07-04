@@ -6,7 +6,7 @@ from app.database import session_scope
 from app.models import Symbol, DailyPrice, StrategyResult
 from app.fetchers import MockFetcher, LudeFetcher, SinaFetcher, get_akshare_fetcher, get_yfinance_fetcher
 from app.validators import DataValidator
-from app.strategies import MomentumStrategy
+from app.strategies import MomentumStrategy, WeightedScoreStrategy
 from app.notifiers import FeishuNotifier
 from app.config import config
 from app.utils.date_utils import get_previous_trading_day, get_n_trading_days_ago, is_trading_day
@@ -50,6 +50,12 @@ def run_pipeline(trade_date: date = None) -> bool:
                 logger.error(f"Calculate strategy failed: {message}")
                 send_alert(f"策略计算失败 - {message}")
                 return False
+
+            # 同时计算加权动量评分策略
+            success, message = calculate_weighted_score(session, trade_date)
+            if not success:
+                logger.error(f"Calculate weighted score failed: {message}")
+                # 不阻断主流程，仅记录错误
 
             success, message = push_results(session, trade_date)
             if not success:
@@ -326,6 +332,83 @@ def calculate_strategy(session, trade_date: date) -> tuple:
 
     logger.info(f"Strategy calculation completed: {len(ranked_results)} results")
     return True, f"Calculated {len(ranked_results)} strategy results"
+
+
+def calculate_weighted_score(session, trade_date: date) -> tuple:
+    """计算加权动量评分策略（对数价格+线性回归+R²）。"""
+    logger.info(f"Calculating weighted score for {trade_date}")
+    strategy = WeightedScoreStrategy()
+
+    symbols = session.query(Symbol).filter(Symbol.status == 1).all()
+
+    previous_day = get_previous_trading_day(trade_date)
+    previous_results = session.query(StrategyResult).filter(
+        StrategyResult.trade_date == previous_day,
+        StrategyResult.strategy_type == "weighted_score"
+    ).all()
+    previous_rank_map = {r.symbol_id: r.ranking for r in previous_results}
+
+    results = []
+    for symbol in symbols:
+        prices = session.query(DailyPrice).filter(
+            DailyPrice.symbol_id == symbol.id,
+            DailyPrice.trade_date <= trade_date
+        ).order_by(DailyPrice.trade_date).all()
+
+        if not prices:
+            continue
+
+        price_list = []
+        for p in prices:
+            price_list.append({
+                "trade_date": p.trade_date.strftime("%Y-%m-%d"),
+                "close_price": float(p.close_price),
+                "volume": p.volume or 0,
+                "amount": float(p.amount) if p.amount else 0,
+            })
+
+        result = strategy.calculate(symbol.id, price_list, trade_date)
+        results.append(result)
+
+    ranked_results = strategy.rank(results)
+    ranked_results = strategy.calculate_ranking_change(ranked_results, previous_rank_map)
+
+    for result in ranked_results:
+        existing = session.query(StrategyResult).filter(
+            StrategyResult.symbol_id == result.symbol_id,
+            StrategyResult.trade_date == result.trade_date,
+            StrategyResult.strategy_type == "weighted_score"
+        ).first()
+
+        if existing:
+            existing.momentum_20d = result.momentum_20d
+            existing.volume_confirmed = result.volume_confirmed
+            existing.volume_change_pct = result.volume_change_pct
+            existing.ranking = result.ranking
+            existing.ranking_change = result.ranking_change
+            existing.trend_strength = result.trend_strength
+            existing.consecutive_days = result.consecutive_days
+            existing.status = result.status
+            existing.strategy_type = "weighted_score"
+        else:
+            db_result = StrategyResult(
+                symbol_id=result.symbol_id,
+                trade_date=result.trade_date,
+                momentum_20d=result.momentum_20d,
+                volume_confirmed=result.volume_confirmed,
+                volume_change_pct=result.volume_change_pct,
+                ranking=result.ranking,
+                ranking_change=result.ranking_change,
+                trend_strength=result.trend_strength,
+                consecutive_days=result.consecutive_days,
+                status=result.status,
+                strategy_type="weighted_score"
+            )
+            session.add(db_result)
+
+    session.commit()
+    logger.info(f"Weighted score calculation completed: {len(ranked_results)} results")
+    return True, f"Calculated {len(ranked_results)} weighted score results"
 
 
 def push_results(session, trade_date: date) -> tuple:
@@ -657,6 +740,120 @@ def backfill_momentum(symbol_filter: str = None) -> bool:
 
     except Exception as e:
         logger.error(f"Momentum backfill failed with exception: {e}", exc_info=True)
+        return False
+
+
+def backfill_weighted_score(symbol_filter: str = None) -> bool:
+    """回溯所有标的在历史数据范围内的每日加权评分，落表存储。"""
+    logger.info(f"Starting weighted score backfill{' for ' + symbol_filter if symbol_filter else ''}")
+
+    try:
+        with session_scope() as session:
+            query = session.query(Symbol).filter(Symbol.status == 1)
+            if symbol_filter:
+                query = query.filter(Symbol.symbol == symbol_filter)
+            symbols = query.all()
+
+            if not symbols:
+                logger.error("No active symbols found for weighted score backfill")
+                return False
+
+            strategy = WeightedScoreStrategy()
+
+            for symbol in symbols:
+                prices = session.query(DailyPrice).filter(
+                    DailyPrice.symbol_id == symbol.id
+                ).order_by(DailyPrice.trade_date).all()
+
+                if not prices or len(prices) < strategy.period + 1:
+                    logger.warning(f"Not enough price data for {symbol.name} ({len(prices) if prices else 0} records)")
+                    continue
+
+                price_list = []
+                for p in prices:
+                    price_list.append({
+                        "trade_date": p.trade_date.strftime("%Y-%m-%d"),
+                        "close_price": float(p.close_price),
+                        "volume": p.volume or 0,
+                        "amount": float(p.amount) if p.amount else 0,
+                    })
+
+                results_by_date = {}
+                for i in range(strategy.period, len(price_list)):
+                    trade_date_str = price_list[i]["trade_date"]
+                    trade_date_obj = datetime.strptime(trade_date_str, "%Y-%m-%d").date()
+                    prices_up_to = price_list[:i + 1]
+                    result = strategy.calculate(symbol.id, prices_up_to, trade_date_obj)
+                    results_by_date[trade_date_str] = result
+
+                for date_str, result in results_by_date.items():
+                    trade_date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+                    existing = session.query(StrategyResult).filter(
+                        StrategyResult.symbol_id == result.symbol_id,
+                        StrategyResult.trade_date == trade_date_obj,
+                        StrategyResult.strategy_type == "weighted_score"
+                    ).first()
+
+                    if existing:
+                        existing.momentum_20d = result.momentum_20d
+                        existing.volume_confirmed = result.volume_confirmed
+                        existing.volume_change_pct = result.volume_change_pct
+                        existing.trend_strength = result.trend_strength
+                        existing.consecutive_days = result.consecutive_days
+                        existing.status = result.status
+                        existing.strategy_type = "weighted_score"
+                    else:
+                        db_result = StrategyResult(
+                            symbol_id=result.symbol_id,
+                            trade_date=trade_date_obj,
+                            momentum_20d=result.momentum_20d,
+                            volume_confirmed=result.volume_confirmed,
+                            volume_change_pct=result.volume_change_pct,
+                            trend_strength=result.trend_strength,
+                            consecutive_days=result.consecutive_days,
+                            status=result.status,
+                            strategy_type="weighted_score"
+                        )
+                        session.add(db_result)
+
+                session.commit()
+                logger.info(f"Backfilled weighted score for {symbol.name}: {len(results_by_date)} dates")
+
+            # 计算排名
+            all_dates = [r[0] for r in session.query(StrategyResult.trade_date).filter(
+                StrategyResult.strategy_type == "weighted_score"
+            ).distinct().all()]
+            all_dates.sort()
+
+            for trade_date_obj in all_dates:
+                results = session.query(StrategyResult).filter(
+                    StrategyResult.trade_date == trade_date_obj,
+                    StrategyResult.status == "valid",
+                    StrategyResult.strategy_type == "weighted_score"
+                ).order_by(StrategyResult.momentum_20d.desc()).all()
+
+                for idx, result in enumerate(results):
+                    result.ranking = idx + 1
+
+                prev_day = get_previous_trading_day(trade_date_obj)
+                prev_results = session.query(StrategyResult).filter(
+                    StrategyResult.trade_date == prev_day,
+                    StrategyResult.strategy_type == "weighted_score"
+                ).all()
+                prev_rank_map = {r.symbol_id: r.ranking for r in prev_results}
+
+                for result in results:
+                    prev_rank = prev_rank_map.get(result.symbol_id)
+                    result.ranking_change = prev_rank - result.ranking if prev_rank is not None else 0
+
+                session.commit()
+
+            logger.info(f"Weighted score backfill completed: {len(all_dates)} dates processed")
+            return True
+
+    except Exception as e:
+        logger.error(f"Weighted score backfill failed with exception: {e}", exc_info=True)
         return False
 
 
