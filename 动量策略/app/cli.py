@@ -164,6 +164,7 @@ def handle_symbol_command(args):
                             name=item["name"],
                             market=item["market"],
                             data_source=item["data_source"],
+                            category=item.get("category", "industry"),
                             status=1
                         )
                         session.add(symbol)

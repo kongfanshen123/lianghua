@@ -1218,6 +1218,11 @@ body {
     border: 1px solid var(--border-color);
 }
 
+.modal.large-modal {
+    max-width: 90%;
+    max-height: 85vh;
+}
+
 .modal-header {
     display: flex;
     justify-content: space-between;

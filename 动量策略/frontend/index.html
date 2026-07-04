@@ -326,53 +326,36 @@
                     </div>
 
                     <div id="dataPrices" class="sub-page hidden">
-                        <div class="data-card">
-                            <div class="card-title">
-                                <h3>价格数据查询</h3>
-                                <div class="card-actions">
-                                    <select id="priceSymbol" class="form-select">
-                                        <option value="">全部标的</option>
-                                    </select>
-                                    <div class="date-picker-wrapper">
-                                        <input type="hidden" id="priceStartDate">
-                                        <div class="date-picker" data-target="priceStartDate">
-                                            <span class="date-picker-value">选择日期</span>
-                                            <i class="fa fa-calendar"></i>
-                                        </div>
-                                    </div>
-                                    <div class="date-picker-wrapper">
-                                        <input type="hidden" id="priceEndDate">
-                                        <div class="date-picker" data-target="priceEndDate">
-                                            <span class="date-picker-value">选择日期</span>
-                                            <i class="fa fa-calendar"></i>
-                                        </div>
-                                    </div>
-                                    <button class="btn btn-primary" onclick="loadPrices()">
-                                        <i class="fa fa-search"></i> 查询
-                                    </button>
-                                </div>
+                    <div class="data-card">
+                        <div class="card-title">
+                            <h3>价格数据查询</h3>
+                            <div class="card-actions">
+                                <select id="priceSymbol" class="form-select">
+                                    <option value="">全部标的</option>
+                                </select>
                             </div>
-                            <div class="chart-container large" id="klineChart"></div>
-                            <div class="table-wrapper">
-                                <table class="data-table" id="priceTable">
-                                    <thead>
-                                        <tr>
-                                            <th>日期</th>
-                                            <th>标的</th>
-                                            <th>开盘</th>
-                                            <th>最高</th>
-                                            <th>最低</th>
-                                            <th>收盘</th>
-                                            <th>成交量</th>
-                                            <th>成交额</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody></tbody>
-                                </table>
-                            </div>
-                            <div class="pagination" id="pricePagination"></div>
                         </div>
+                        <div class="chart-container large" id="klineChart"></div>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="priceTable">
+                                <thead>
+                                    <tr>
+                                        <th>日期</th>
+                                        <th>标的</th>
+                                        <th>开盘</th>
+                                        <th>最高</th>
+                                        <th>最低</th>
+                                        <th>收盘</th>
+                                        <th>成交量</th>
+                                        <th>成交额</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div class="pagination" id="pricePagination"></div>
                     </div>
+                </div>
                 </div>
             </div>
         </main>
@@ -419,6 +402,18 @@
                     <i class="fa fa-wrench"></i> 开始修复
                 </button>
                 <div class="modal-result" id="repairResult"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="klineModal">
+        <div class="modal large-modal">
+            <div class="modal-header">
+                <h3 id="klineModalTitle">K线图</h3>
+                <button class="modal-close" onclick="closeKlineModal()"><i class="fa fa-close"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="chart-container large" id="modalKlineChart"></div>
             </div>
         </div>
     </div>

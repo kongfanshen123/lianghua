@@ -66,7 +66,7 @@ function switchPage(pageId) {
         updateIssueDistributionChart();
     } else if (pageId === 'tabData') {
         loadSymbols();
-        loadPriceSymbolOptions();
+        loadPriceSymbolOptions(true);
     }
 }
 
@@ -81,6 +81,16 @@ function switchSubPage(subPageId) {
         loadPriceSymbolOptions();
     }
 }
+
+let priceSymbolChangeHandlerAdded = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const priceSymbolSelect = document.getElementById('priceSymbol');
+    if (priceSymbolSelect && !priceSymbolChangeHandlerAdded) {
+        priceSymbolSelect.addEventListener('change', loadPrices);
+        priceSymbolChangeHandlerAdded = true;
+    }
+});
 
 function switchCategory(category) {
     currentCategory = category;
@@ -499,18 +509,29 @@ async function loadSymbols() {
     }
 }
 
-async function loadPriceSymbolOptions() {
+async function loadPriceSymbolOptions(selectDefault = false) {
     try {
         const result = await getSymbols();
         const select = document.getElementById('priceSymbol');
         select.innerHTML = '<option value="">全部标的</option>';
         
-        result.data.forEach(item => {
+        const sortedData = [...result.data].sort((a, b) => {
+            if (a.category === 'market' && b.category !== 'market') return -1;
+            if (a.category !== 'market' && b.category === 'market') return 1;
+            return a.symbol.localeCompare(b.symbol);
+        });
+        
+        sortedData.forEach(item => {
             const option = document.createElement('option');
             option.value = item.symbol;
             option.textContent = `${item.symbol} - ${item.name}`;
             select.appendChild(option);
         });
+        
+        if (selectDefault) {
+            select.value = '000905';
+            loadPrices();
+        }
     } catch (error) {
         console.error('Failed to load symbol options:', error);
     }
@@ -519,8 +540,6 @@ async function loadPriceSymbolOptions() {
 async function loadPrices(page = 1) {
     currentPricePage = page;
     const symbol = document.getElementById('priceSymbol').value;
-    const startDate = document.getElementById('priceStartDate').value;
-    const endDate = document.getElementById('priceEndDate').value;
     
     const tbody = document.getElementById('priceTable').querySelector('tbody');
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#6b6b80;"><i class="fa fa-spinner fa-spin"></i> 加载中...</td></tr>';
@@ -528,12 +547,10 @@ async function loadPrices(page = 1) {
     try {
         const tableParams = { page, page_size: 50 };
         if (symbol) tableParams.symbol = symbol;
-        if (startDate) tableParams.start_date = startDate;
-        if (endDate) tableParams.end_date = endDate;
         
         const [tableResult, klineResult] = await Promise.all([
             getPrices(tableParams),
-            getPrices({ symbol, start_date: startDate, end_date: endDate, page: 1, page_size: 1000 })
+            getPrices({ symbol, page: 1, page_size: 1000 })
         ]);
         
         if (typeof updateKlineChart === 'function') {
@@ -759,7 +776,7 @@ async function loadLatestResultsForMomentum() {
             const momentumColor = momentumVal >= 0 ? 'color: var(--accent-green); font-weight: 600;' : 'color: var(--accent-red); font-weight: 600;';
             
             return `
-                <tr>
+                <tr onclick="openKlineModal('${item.symbol}', '${item.name}')" style="cursor: pointer;">
                     <td>${item.ranking}</td>
                     <td>${item.symbol} - ${item.name}</td>
                     <td>${categoryText}</td>
@@ -884,6 +901,31 @@ function openRepairModal() {
 
 function closeRepairModal() {
     document.getElementById('repairModal').classList.remove('show');
+}
+
+function openKlineModal(symbol, name) {
+    document.getElementById('klineModalTitle').textContent = `${symbol} - ${name} K线图`;
+    document.getElementById('klineModal').classList.add('show');
+    
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const startDate = oneYearAgo.toISOString().split('T')[0];
+    const endDate = new Date().toISOString().split('T')[0];
+    
+    loadKlineForModal(symbol, startDate, endDate);
+}
+
+function closeKlineModal() {
+    document.getElementById('klineModal').classList.remove('show');
+}
+
+async function loadKlineForModal(symbol, startDate, endDate) {
+    try {
+        const result = await getPrices({ symbol, start_date: startDate, end_date: endDate, page: 1, page_size: 1000 });
+        updateModalKlineChart(result.data || []);
+    } catch (error) {
+        console.error('Failed to load K-line data:', error);
+    }
 }
 
 async function executeTask(taskType) {
