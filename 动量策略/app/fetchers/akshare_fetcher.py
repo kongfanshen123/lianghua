@@ -12,6 +12,58 @@ class AkShareFetcher(BaseFetcher):
         super().__init__(request_interval, max_retry, retry_delay)
         self.data_source = "akshare"
 
+    def fetch_price_history_hfq(self, symbol: str, start_date: date, end_date: date) -> FetcherResult:
+        """获取后复权(hfq)历史价格数据，用于修正分红导致的价格跳变。"""
+        result = FetcherResult()
+        result.data_source = self.data_source
+
+        try:
+            symbol_type = self._detect_symbol_type(symbol)
+            df = None
+
+            if symbol_type == "index":
+                # 指数无需复权，直接返回原始数据
+                df = ak.stock_zh_index_daily_em(symbol=symbol)
+            elif symbol_type == "etf":
+                df = ak.fund_etf_hist_em(
+                    symbol=symbol,
+                    period="daily",
+                    start_date=start_date.strftime("%Y%m%d"),
+                    end_date=end_date.strftime("%Y%m%d"),
+                    adjust="hfq"
+                )
+            else:
+                df = ak.stock_zh_a_hist(
+                    symbol=symbol,
+                    period="daily",
+                    start_date=start_date.strftime("%Y%m%d"),
+                    end_date=end_date.strftime("%Y%m%d"),
+                    adjust="hfq"
+                )
+
+            if df is None or df.empty:
+                result.success = False
+                result.error_message = f"No hfq data found for {symbol} from {start_date} to {end_date}"
+                return result
+
+            df = df[df['日期'] >= start_date.strftime("%Y-%m-%d")]
+            df = df[df['日期'] <= end_date.strftime("%Y-%m-%d")]
+
+            if df.empty:
+                result.success = False
+                result.error_message = f"No hfq data found for {symbol} from {start_date} to {end_date}"
+                return result
+
+            result.data = self._df_to_dict_hfq(df)
+            result.success = True
+            return result
+
+        except Exception as e:
+            result.success = False
+            result.error_message = str(e)
+            logger.error(f"AkShare fetch_price_history_hfq failed for {symbol}: {e}")
+            return result
+
     def fetch_daily_price(self, symbol: str, trade_date: Optional[date] = None) -> FetcherResult:
         result = FetcherResult()
         result.data_source = self.data_source
@@ -120,12 +172,12 @@ class AkShareFetcher(BaseFetcher):
             return result
 
     def _detect_symbol_type(self, symbol: str) -> str:
-        index_codes = {"000001", "000300", "399006", "000905", "000852"}
+        index_codes = {"000001", "000300", "399006", "000905", "000852", "399001"}
         if symbol in index_codes:
             return "index"
 
-        etf_codes = {"510300", "159915", "588000", "510050", "510500", "159905"}
-        if symbol in etf_codes:
+        # ETF: 51xxxx, 15xxxx, 56xxxx, 58xxxx (Shanghai/Shenzhen ETF codes)
+        if symbol.startswith(("51", "15", "56", "58")):
             return "etf"
 
         return "stock"
@@ -144,6 +196,24 @@ class AkShareFetcher(BaseFetcher):
                 "adjusted_factor": 1.0,
                 "is_suspended": 0,
                 "is_ex_dividend": 0,
+            })
+        return data
+
+    def _df_to_dict_hfq(self, df) -> List[Dict]:
+        """将后复权DataFrame转为标准dict格式，标记 is_ex_dividend。"""
+        data = []
+        for _, row in df.iterrows():
+            data.append({
+                "trade_date": self._parse_date(row.get("日期", "")),
+                "close_price": float(row.get("收盘", 0)),
+                "open_price": float(row.get("开盘", 0)),
+                "high_price": float(row.get("最高", 0)),
+                "low_price": float(row.get("最低", 0)),
+                "volume": int(row.get("成交量", 0)),
+                "amount": float(row.get("成交额", 0)),
+                "adjusted_factor": 1.0,
+                "is_suspended": 0,
+                "is_ex_dividend": 1,
             })
         return data
 

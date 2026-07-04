@@ -37,6 +37,10 @@ def main_cli():
     parser_repair = subparsers.add_parser("repair", help="Repair anomalous data")
     parser_repair.add_argument("--symbol", type=str, default=None, help="Specific symbol to repair")
 
+    parser_repair_jumps = subparsers.add_parser("repair-jumps", help="Detect and repair price jumps using hfq data")
+    parser_repair_jumps.add_argument("--symbol", type=str, default=None, help="Specific symbol to repair")
+    parser_repair_jumps.add_argument("--threshold", type=float, default=15.0, help="Price jump threshold percentage")
+
     parser_scheduler = subparsers.add_parser("scheduler", help="Start scheduler")
 
     parser_db = subparsers.add_parser("db", help="Database operations")
@@ -125,6 +129,25 @@ def main_cli():
             print("Repair completed successfully")
         else:
             print("Repair failed")
+    elif args.command == "repair-jumps":
+        from app.pipeline import detect_and_repair_price_jumps, repair_with_hfq
+        from app.database import session_scope
+        with session_scope() as session:
+            if args.symbol:
+                symbol_obj = session.query(Symbol).filter(Symbol.symbol == args.symbol).first()
+                if not symbol_obj:
+                    print(f"Symbol {args.symbol} not found")
+                    return
+                success = repair_with_hfq(session, symbol_obj)
+                if success:
+                    print(f"Price jump repair completed for {args.symbol}")
+                else:
+                    print(f"Price jump repair failed for {args.symbol}")
+            else:
+                result = detect_and_repair_price_jumps(session, args.threshold)
+                print(f"Detected {result['total_jumps']} jumps, repaired {result['repaired']}, failed {result['failed']}")
+                for detail in result['details']:
+                    print(f"  {detail['name']} ({detail['symbol']}) {detail['trade_date']} {detail['pct_change']}% -> {detail['status']}")
     elif args.command == "scheduler":
         start_scheduler()
     elif args.command == "db":

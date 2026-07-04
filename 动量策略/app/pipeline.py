@@ -33,6 +33,12 @@ def run_pipeline(trade_date: date = None) -> bool:
                 send_alert(f"数据获取失败 - {message}")
                 return False
 
+            # 数据获取后自动检测并修复价格跳变（分红/拆分导致）
+            repair_result = detect_and_repair_price_jumps(session)
+            if repair_result["repaired"] > 0:
+                logger.info(f"Price jumps repaired: {repair_result}")
+                send_alert(f"检测到价格跳变并已修复 {repair_result['repaired']} 个标的（后复权）")
+
             success, message = validate_data(session, trade_date)
             if not success:
                 logger.error(f"Validate data failed: {message}")
@@ -652,3 +658,222 @@ def backfill_momentum(symbol_filter: str = None) -> bool:
     except Exception as e:
         logger.error(f"Momentum backfill failed with exception: {e}", exc_info=True)
         return False
+
+
+def detect_price_jumps(session, symbol_id: int = None, threshold: float = 15.0) -> List[Dict]:
+    """检测价格跳变（日间涨跌幅超过阈值），返回跳变记录列表。
+
+    Args:
+        session: 数据库会话
+        symbol_id: 指定标的ID，为空则检测所有标的
+        threshold: 涨跌幅阈值（百分比），默认15%
+
+    Returns:
+        跳变记录列表，每条包含 symbol_id, symbol, name, trade_date, prev_close,
+        close_price, pct_change
+    """
+    query = session.query(DailyPrice).filter(DailyPrice.is_suspended == 0)
+    if symbol_id:
+        query = query.filter(DailyPrice.symbol_id == symbol_id)
+
+    all_prices = query.order_by(DailyPrice.symbol_id, DailyPrice.trade_date).all()
+
+    jumps = []
+    prev_by_symbol = {}
+
+    for price in all_prices:
+        sid = price.symbol_id
+        if sid in prev_by_symbol:
+            prev = prev_by_symbol[sid]
+            prev_close = float(prev.close_price)
+            curr_close = float(price.close_price)
+            if prev_close > 0:
+                pct_change = (curr_close - prev_close) / prev_close * 100
+                if abs(pct_change) > threshold:
+                    symbol = session.query(Symbol).filter(Symbol.id == sid).first()
+                    jumps.append({
+                        "symbol_id": sid,
+                        "symbol": symbol.symbol if symbol else "",
+                        "name": symbol.name if symbol else "",
+                        "trade_date": price.trade_date,
+                        "prev_date": prev.trade_date,
+                        "prev_close": prev_close,
+                        "close_price": curr_close,
+                        "pct_change": round(pct_change, 2),
+                    })
+        prev_by_symbol[sid] = price
+
+    return jumps
+
+
+def repair_with_hfq(session, symbol: Symbol) -> bool:
+    """使用后复权数据修正指定标的价格跳变。
+
+    优先使用 AkShare 后复权数据；若网络不可用，则回退到本地复权因子计算。
+    本地逻辑：检测跳变点，计算复权因子=前日收盘/当日收盘，
+    将跳变日及之后的所有价格乘以累积复权因子，实现后复权效果。
+
+    Args:
+        session: 数据库会话
+        symbol: Symbol 对象
+
+    Returns:
+        是否修复成功
+    """
+    # 获取该标的全部历史价格（按日期排序）
+    prices = session.query(DailyPrice).filter(
+        DailyPrice.symbol_id == symbol.id
+    ).order_by(DailyPrice.trade_date).all()
+
+    if not prices:
+        logger.warning(f"No data to repair for {symbol.name}")
+        return False
+
+    # 尝试使用 AkShare 后复权数据
+    AkShareFetcher = get_akshare_fetcher()
+    if AkShareFetcher:
+        try:
+            fetcher = AkShareFetcher(
+                request_interval=config.REQUEST_INTERVAL,
+                max_retry=config.MAX_RETRY,
+                retry_delay=config.RETRY_DELAY
+            )
+
+            start_date = prices[0].trade_date
+            end_date = prices[-1].trade_date
+            result = fetcher.fetch_price_history_hfq(symbol.symbol, start_date, end_date)
+
+            if result.success and result.data:
+                for item in result.data:
+                    trade_date_obj = datetime.strptime(item["trade_date"], "%Y-%m-%d").date()
+                    existing = session.query(DailyPrice).filter(
+                        DailyPrice.symbol_id == symbol.id,
+                        DailyPrice.trade_date == trade_date_obj
+                    ).first()
+
+                    if existing:
+                        existing.close_price = item["close_price"]
+                        existing.open_price = item["open_price"]
+                        existing.high_price = item["high_price"]
+                        existing.low_price = item["low_price"]
+                        existing.is_ex_dividend = item.get("is_ex_dividend", 0)
+
+                session.commit()
+                logger.info(f"Successfully repaired {symbol.name} ({symbol.symbol}) with AkShare hfq data: {len(result.data)} records")
+                return True
+            else:
+                logger.warning(f"AkShare hfq failed for {symbol.name}, falling back to local calculation")
+        except Exception as e:
+            logger.warning(f"AkShare hfq error for {symbol.name}: {e}, falling back to local calculation")
+
+    # 本地复权因子计算（后复权）
+    logger.info(f"Calculating local hfq adjustment for {symbol.name} ({symbol.symbol})")
+
+    # 检测所有跳变点并计算累积复权因子
+    cumulative_factor = 1.0
+    jump_points = []
+
+    for i in range(1, len(prices)):
+        prev_close = float(prices[i - 1].close_price)
+        curr_close = float(prices[i].close_price)
+        if prev_close > 0 and curr_close > 0:
+            pct_change = (curr_close - prev_close) / prev_close * 100
+            if abs(pct_change) > 15.0:
+                # 复权因子 = 前日收盘 / 当日收盘（使跳变后价格与跳变前连续）
+                factor = prev_close / curr_close
+                cumulative_factor *= factor
+                jump_points.append({
+                    "date": prices[i].trade_date,
+                    "prev_close": prev_close,
+                    "close": curr_close,
+                    "factor": factor,
+                    "cumulative": cumulative_factor,
+                })
+                logger.info(f"  Jump detected: {prices[i].trade_date} prev={prev_close} -> close={curr_close} factor={factor:.4f}")
+
+    if not jump_points:
+        logger.info(f"No jumps found for {symbol.name}, no repair needed")
+        return True
+
+    # 从最后一个跳变点往前追溯，应用累积复权因子
+    # 后复权：跳变日及之后的价格乘以累积因子
+    jump_idx = 0
+    current_cumulative = 1.0
+
+    for i in range(len(prices)):
+        # 检查是否到达跳变点
+        while jump_idx < len(jump_points) and prices[i].trade_date >= jump_points[jump_idx]["date"]:
+            current_cumulative = jump_points[jump_idx]["cumulative"]
+            jump_idx += 1
+
+        if current_cumulative != 1.0:
+            prices[i].close_price = round(float(prices[i].close_price) * current_cumulative, 4)
+            prices[i].open_price = round(float(prices[i].open_price) * current_cumulative, 4) if prices[i].open_price else prices[i].open_price
+            prices[i].high_price = round(float(prices[i].high_price) * current_cumulative, 4) if prices[i].high_price else prices[i].high_price
+            prices[i].low_price = round(float(prices[i].low_price) * current_cumulative, 4) if prices[i].low_price else prices[i].low_price
+            prices[i].is_ex_dividend = 1
+
+    session.commit()
+    logger.info(f"Successfully repaired {symbol.name} ({symbol.symbol}) with local hfq: {len(jump_points)} jump points, max factor={cumulative_factor:.4f}")
+    return True
+
+
+def detect_and_repair_price_jumps(session, threshold: float = 15.0) -> Dict:
+    """检测所有标的价格跳变，并使用后复权数据修复。
+
+    Args:
+        session: 数据库会话
+        threshold: 涨跌幅阈值（百分比），默认15%
+
+    Returns:
+        修复结果摘要 dict
+    """
+    logger.info(f"Detecting price jumps (threshold: {threshold}%)...")
+
+    jumps = detect_price_jumps(session, threshold=threshold)
+
+    if not jumps:
+        logger.info("No price jumps detected")
+        return {"total_jumps": 0, "repaired": 0, "failed": 0, "details": []}
+
+    logger.warning(f"Detected {len(jumps)} price jumps:")
+    repaired_symbols = set()
+    failed_symbols = set()
+    details = []
+
+    for jump in jumps:
+        logger.warning(
+            f"  {jump['name']} ({jump['symbol']}) {jump['trade_date']} "
+            f"prev={jump['prev_close']} -> close={jump['close_price']} ({jump['pct_change']}%)"
+        )
+
+        # 每个标的只修复一次
+        if jump["symbol_id"] in repaired_symbols or jump["symbol_id"] in failed_symbols:
+            details.append({**jump, "status": "skipped"})
+            continue
+
+        symbol = session.query(Symbol).filter(Symbol.id == jump["symbol_id"]).first()
+        if not symbol:
+            continue
+
+        # 指数不存在分红，跳过
+        if symbol.category == "market":
+            details.append({**jump, "status": "skipped_index"})
+            continue
+
+        success = repair_with_hfq(session, symbol)
+        if success:
+            repaired_symbols.add(jump["symbol_id"])
+            details.append({**jump, "status": "repaired"})
+        else:
+            failed_symbols.add(jump["symbol_id"])
+            details.append({**jump, "status": "failed"})
+
+    result = {
+        "total_jumps": len(jumps),
+        "repaired": len(repaired_symbols),
+        "failed": len(failed_symbols),
+        "details": details,
+    }
+    logger.info(f"Price jump repair completed: {result['repaired']} repaired, {result['failed']} failed")
+    return result

@@ -762,6 +762,26 @@ async def trigger_backfill_momentum(
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/api/tasks/repair-jumps")
+async def trigger_repair_jumps(
+    symbol: str = Query(None, description="指定标的代码，为空则检测全部"),
+    threshold: float = Query(15.0, description="价格跳变阈值百分比")
+):
+    try:
+        cmd = ["python3", "main.py", "repair-jumps", "--threshold", str(threshold)]
+        if symbol:
+            cmd.extend(["--symbol", symbol])
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=_BASE_DIR, timeout=600)
+        
+        if result.returncode == 0:
+            return {"status": "success", "message": result.stdout}
+        else:
+            return {"status": "error", "message": result.stderr}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/api/system/status")
 async def get_system_status():
     conn = get_db()
