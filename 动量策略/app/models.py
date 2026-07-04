@@ -53,6 +53,7 @@ class StrategyResult(Base):
     ranking = Column(Integer)
     ranking_change = Column(Integer)
     trend_strength = Column(String(20))
+    consecutive_days = Column(Integer, default=0)
     status = Column(String(20), default="valid")
     created_at = Column(TIMESTAMP, default=func.now())
 

@@ -351,10 +351,6 @@ body {
     color: var(--accent-green);
 }
 
-.action-btn.btn-repair:hover {
-    color: var(--accent-yellow);
-}
-
 .page-content {
     flex: 1;
     overflow-y: auto;
@@ -684,191 +680,6 @@ body {
 .badge.same {
     background: rgba(107, 107, 128, 0.15);
     color: var(--text-muted);
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    margin-bottom: 24px;
-}
-
-.metric-card {
-    background: var(--bg-card);
-    border-radius: var(--radius-lg);
-    padding: 20px;
-    border: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.metric-card.good {
-    border-left: 3px solid var(--accent-green);
-}
-
-.metric-card.warning {
-    border-left: 3px solid var(--accent-yellow);
-}
-
-.metric-card.danger {
-    border-left: 3px solid var(--accent-red);
-}
-
-.metric-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-}
-
-.metric-card.good .metric-icon {
-    background: rgba(74, 222, 128, 0.15);
-    color: var(--accent-green);
-}
-
-.metric-card.warning .metric-icon {
-    background: rgba(251, 191, 36, 0.15);
-    color: var(--accent-yellow);
-}
-
-.metric-card.danger .metric-icon {
-    background: rgba(248, 113, 113, 0.15);
-    color: var(--accent-red);
-}
-
-.metric-content {
-    flex: 1;
-}
-
-.metric-value {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-}
-
-.metric-label {
-    font-size: 12px;
-    color: var(--text-muted);
-}
-
-.quality-overview {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-    margin-bottom: 24px;
-}
-
-.issue-summary-cards {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
-}
-
-.issue-summary-card {
-    background: var(--bg-card);
-    border-radius: var(--radius-md);
-    padding: 16px;
-    border: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    cursor: pointer;
-    transition: var(--transition);
-}
-
-.issue-summary-card:hover {
-    background: var(--bg-hover);
-    transform: translateY(-2px);
-}
-
-.issue-summary-card.no-data {
-    border-left: 3px solid var(--accent-yellow);
-}
-
-.issue-summary-card.negative-price {
-    border-left: 3px solid var(--accent-red);
-}
-
-.issue-summary-card.zero-volume {
-    border-left: 3px solid var(--accent-yellow);
-}
-
-.issue-summary-card.duplicate {
-    border-left: 3px solid var(--accent-red);
-}
-
-.issue-summary-card.price-jump {
-    border-left: 3px solid var(--accent-red);
-}
-
-.issue-summary-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-}
-
-.issue-summary-card.no-data .issue-summary-icon {
-    background: rgba(251, 191, 36, 0.15);
-    color: var(--accent-yellow);
-}
-
-.issue-summary-card.negative-price .issue-summary-icon {
-    background: rgba(248, 113, 113, 0.15);
-    color: var(--accent-red);
-}
-
-.issue-summary-card.zero-volume .issue-summary-icon {
-    background: rgba(251, 191, 36, 0.15);
-    color: var(--accent-yellow);
-}
-
-.issue-summary-card.duplicate .issue-summary-icon {
-    background: rgba(248, 113, 113, 0.15);
-    color: var(--accent-red);
-}
-
-.issue-summary-card.price-jump .issue-summary-icon {
-    background: rgba(248, 113, 113, 0.15);
-    color: var(--accent-red);
-}
-
-.issue-summary-info {
-    flex: 1;
-}
-
-.issue-summary-count {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.issue-summary-label {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
-.overview-section {
-    background: var(--bg-card);
-    border-radius: var(--radius-lg);
-    padding: 20px;
-    border: 1px solid var(--border-color);
-}
-
-.section-title h3 {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 16px;
 }
 
 .row-grid {
@@ -1336,14 +1147,60 @@ body {
     border: 1px solid rgba(248, 113, 113, 0.2);
 }
 
-.modal-result.loading {
-    background: rgba(74, 158, 255, 0.1);
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 280px;
+    max-width: 480px;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-md);
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.toast-error {
+    background: rgba(248, 113, 113, 0.15);
+    color: var(--accent-red);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+.toast-success {
+    background: rgba(74, 222, 128, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+.toast-info {
+    background: rgba(74, 158, 255, 0.15);
     color: var(--accent-blue);
-    border: 1px solid rgba(74, 158, 255, 0.2);
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    backdrop-filter: blur(10px);
 }
 
 @media (max-width: 1200px) {
-    .stats-row, .stats-grid {
+    .stats-row {
         grid-template-columns: repeat(2, 1fr);
     }
     
@@ -1383,7 +1240,7 @@ body {
         display: none;
     }
     
-    .stats-row, .stats-grid {
+    .stats-row {
         grid-template-columns: 1fr;
     }
     
@@ -1396,13 +1253,5 @@ body {
     .header-left {
         flex-direction: column;
         align-items: flex-start;
-    }
-    
-    .quality-overview {
-        grid-template-columns: 1fr;
-    }
-    
-    .issue-summary-cards {
-        grid-template-columns: repeat(2, 1fr);
     }
 }

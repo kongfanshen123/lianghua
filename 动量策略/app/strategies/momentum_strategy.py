@@ -93,6 +93,20 @@ class MomentumStrategy(BaseStrategy):
         else:
             return "极强下跌"
 
+    def calculate_consecutive_days(self, current_momentum: float, historical_momentums: List[float]) -> int:
+        """计算当前趋势方向的连续天数（含当天）。
+        以0为分界线，从当前日期往前连续统计同方向动量的天数。
+        """
+        current_direction = current_momentum > 0
+        consecutive = 1  # 当天计入
+        for prev_momentum in reversed(historical_momentums):
+            prev_direction = prev_momentum > 0
+            if prev_direction == current_direction:
+                consecutive += 1
+            else:
+                break
+        return consecutive
+
     def _confirm_volume(self, prices: List[Dict]) -> tuple:
         if len(prices) < 20:
             return 0, 0.0

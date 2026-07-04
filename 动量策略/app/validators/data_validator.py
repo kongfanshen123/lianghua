@@ -60,6 +60,22 @@ class DataValidator(BaseValidator):
         if not result.valid:
             return result
 
+        # 日间价格跳变校验：与前一日收盘价对比
+        if history_data:
+            prev_close = history_data[-1].get("close_price", 0)
+            current_close = current_data.get("close_price", 0)
+            if prev_close and prev_close > 0 and current_close > 0:
+                day_change_pct = abs((current_close - prev_close) / prev_close) * 100
+                if day_change_pct > self.price_change_threshold:
+                    result.valid = False
+                    result.status = "interday_price_anomaly"
+                    result.message = (
+                        f"Day-over-day price change {day_change_pct:.2f}% "
+                        f"exceeds threshold {self.price_change_threshold}% "
+                        f"(prev={prev_close}, curr={current_close})"
+                    )
+                    return result
+
         if len(history_data) >= 20:
             volumes = [h.get("volume", 0) for h in history_data[-20:]]
             avg_volume = sum(volumes) / len(volumes)

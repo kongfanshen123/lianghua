@@ -3,14 +3,10 @@ const API_BASE = '/api';
 const cache = {
     symbols: null,
     symbolsTimestamp: 0,
-    qualitySummary: null,
-    qualitySummaryTimestamp: 0,
     qualityDetails: null,
     qualityDetailsTimestamp: 0,
     coverage: null,
     coverageTimestamp: 0,
-    qualityTrend: null,
-    qualityTrendTimestamp: 0,
     latestResults: null,
     latestResultsTimestamp: 0,
     symbolPriceCounts: null,
@@ -118,6 +114,10 @@ async function getLatestResults(category = null) {
     return result;
 }
 
+async function getResultsHistory(params = {}) {
+    return await fetchAPI('/results/history', params);
+}
+
 async function getCategorySummary() {
     if (isCacheValid(cache.categorySummaryTimestamp)) {
         return cache.categorySummary;
@@ -126,17 +126,6 @@ async function getCategorySummary() {
     const result = await fetchAPI('/results/category-summary');
     cache.categorySummary = result;
     cache.categorySummaryTimestamp = Date.now();
-    return result;
-}
-
-async function getQualitySummary() {
-    if (isCacheValid(cache.qualitySummaryTimestamp)) {
-        return cache.qualitySummary;
-    }
-    
-    const result = await fetchAPI('/quality/summary');
-    cache.qualitySummary = result;
-    cache.qualitySummaryTimestamp = Date.now();
     return result;
 }
 
@@ -164,18 +153,6 @@ async function getCoverage() {
     const result = await fetchAPI('/quality/coverage');
     cache.coverage = result;
     cache.coverageTimestamp = Date.now();
-    return result;
-}
-
-async function getQualityTrend(days = 30) {
-    const cacheKey = `qualityTrend_${days}`;
-    if (isCacheValid(cache[`${cacheKey}Timestamp`])) {
-        return cache[cacheKey];
-    }
-    
-    const result = await fetchAPI('/quality/trend', { days });
-    cache[cacheKey] = result;
-    cache[`${cacheKey}Timestamp`] = Date.now();
     return result;
 }
 
@@ -216,12 +193,12 @@ async function triggerCalculate() {
     return await fetchAPI('/tasks/calculate', {}, 'POST');
 }
 
-async function triggerRepair(symbol = null) {
-    const params = {};
-    if (symbol) params.symbol = symbol;
-    return await fetchAPI('/tasks/repair', params, 'POST');
-}
-
 async function triggerFullPipeline() {
     return await fetchAPI('/tasks/full', {}, 'POST');
+}
+
+async function triggerBackfillMomentum(symbol = null) {
+    const params = {};
+    if (symbol) params.symbol = symbol;
+    return await fetchAPI('/tasks/backfill-momentum', params, 'POST');
 }

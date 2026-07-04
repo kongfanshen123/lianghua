@@ -1,7 +1,5 @@
 let momentumBarChart = null;
-let qualityTrendChart = null;
 let klineChart = null;
-let issueDistributionChart = null;
 let modalKlineChart = null;
 let chartsInitialized = false;
 
@@ -25,9 +23,7 @@ function initCharts() {
     
     const containers = [
         { id: 'momentumBarChart', chart: 'momentumBarChart' },
-        { id: 'qualityTrendChart', chart: 'qualityTrendChart' },
-        { id: 'klineChart', chart: 'klineChart' },
-        { id: 'issueDistributionChart', chart: 'issueDistributionChart' }
+        { id: 'klineChart', chart: 'klineChart' }
     ];
     
     containers.forEach(({ id }) => {
@@ -35,9 +31,7 @@ function initCharts() {
         if (container) {
             const chart = echarts.init(container);
             if (id === 'momentumBarChart') momentumBarChart = chart;
-            else if (id === 'qualityTrendChart') qualityTrendChart = chart;
             else if (id === 'klineChart') klineChart = chart;
-            else if (id === 'issueDistributionChart') issueDistributionChart = chart;
         }
     });
     
@@ -56,9 +50,7 @@ function ensureChartInitialized(chartType) {
     
     const chartMap = {
         bar: { id: 'momentumBarChart', ref: 'momentumBarChart' },
-        trend: { id: 'qualityTrendChart', ref: 'qualityTrendChart' },
-        kline: { id: 'klineChart', ref: 'klineChart' },
-        issue: { id: 'issueDistributionChart', ref: 'issueDistributionChart' }
+        kline: { id: 'klineChart', ref: 'klineChart' }
     };
     
     const config = chartMap[chartType];
@@ -79,8 +71,6 @@ function debounceChartUpdate(func) {
 }
 
 const debouncedUpdateMomentumBar = debounceChartUpdate(renderMomentumBarChart);
-const debouncedUpdateQualityTrend = debounceChartUpdate(renderQualityTrendChart);
-const debouncedUpdateIssueDistribution = debounceChartUpdate(renderIssueDistributionChart);
 
 function renderMomentumBarChart(data) {
     ensureChartInitialized('bar');
@@ -176,147 +166,6 @@ function renderMomentumBarChart(data) {
     };
     
     momentumBarChart.setOption(option);
-}
-
-function renderQualityTrendChart(data) {
-    ensureChartInitialized('trend');
-    if (!qualityTrendChart) return;
-    
-    const option = {
-        backgroundColor: 'transparent',
-        tooltip: {
-            trigger: 'axis',
-            backgroundColor: DARK_COLORS.bgLight,
-            borderColor: DARK_COLORS.border,
-            borderWidth: 1,
-            textStyle: { color: DARK_COLORS.text }
-        },
-        legend: {
-            data: ['标的数', '记录数'],
-            top: '0%',
-            textStyle: { color: DARK_COLORS.textSecondary, fontSize: 12 },
-            itemGap: 24,
-            itemWidth: 16,
-            itemHeight: 8,
-            itemStyle: { borderRadius: 2 }
-        },
-        grid: {
-            left: '3%',
-            right: '4%',
-            bottom: '15%',
-            top: '15%',
-            containLabel: true
-        },
-        xAxis: {
-            type: 'category',
-            boundaryGap: false,
-            data: data.map(item => item.date),
-            axisLine: { lineStyle: { color: DARK_COLORS.border } },
-            axisTick: { show: false },
-            axisLabel: {
-                rotate: 45,
-                fontSize: 10,
-                color: DARK_COLORS.textMuted
-            }
-        },
-        yAxis: {
-            type: 'value',
-            axisLine: { show: false },
-            axisTick: { show: false },
-            axisLabel: { color: DARK_COLORS.textMuted, fontSize: 11 },
-            splitLine: { lineStyle: { color: DARK_COLORS.border, type: 'dashed' } }
-        },
-        series: [
-            {
-                name: '标的数',
-                type: 'line',
-                smooth: true,
-                symbol: 'circle',
-                symbolSize: 6,
-                lineStyle: { color: DARK_COLORS.blue, width: 3 },
-                itemStyle: { color: DARK_COLORS.blue, borderWidth: 2, borderColor: DARK_COLORS.bg },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(74, 158, 255, 0.3)' },
-                        { offset: 1, color: 'rgba(74, 158, 255, 0.05)' }
-                    ])
-                },
-                data: data.map(item => item.symbol_count)
-            },
-            {
-                name: '记录数',
-                type: 'line',
-                smooth: true,
-                symbol: 'circle',
-                symbolSize: 6,
-                lineStyle: { color: DARK_COLORS.green, width: 3 },
-                itemStyle: { color: DARK_COLORS.green, borderWidth: 2, borderColor: DARK_COLORS.bg },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(74, 222, 128, 0.3)' },
-                        { offset: 1, color: 'rgba(74, 222, 128, 0.05)' }
-                    ])
-                },
-                data: data.map(item => item.record_count)
-            }
-        ]
-    };
-    
-    qualityTrendChart.setOption(option);
-}
-
-function renderIssueDistributionChart(data) {
-    ensureChartInitialized('issue');
-    if (!issueDistributionChart) return;
-    
-    if (!data || data.length === 0) {
-        issueDistributionChart.setOption({
-            title: {
-                text: '暂无异常',
-                left: 'center',
-                top: 'center',
-                textStyle: { color: DARK_COLORS.textMuted, fontSize: 14 }
-            }
-        });
-        return;
-    }
-    
-    const option = {
-        backgroundColor: 'transparent',
-        tooltip: {
-            trigger: 'item',
-            backgroundColor: DARK_COLORS.bgLight,
-            borderColor: DARK_COLORS.border,
-            borderWidth: 1,
-            textStyle: { color: DARK_COLORS.text },
-            formatter: '{b}: {c} ({d}%)'
-        },
-        series: [{
-            type: 'pie',
-            radius: ['40%', '70%'],
-            center: ['50%', '50%'],
-            avoidLabelOverlap: true,
-            itemStyle: {
-                borderRadius: 6,
-                borderColor: DARK_COLORS.bg,
-                borderWidth: 2
-            },
-            label: {
-                show: true,
-                fontSize: 11,
-                color: DARK_COLORS.textSecondary,
-                formatter: '{b}\n{c}'
-            },
-            labelLine: {
-                length: 10,
-                length2: 8,
-                lineStyle: { color: DARK_COLORS.border }
-            },
-            data: data
-        }]
-    };
-    
-    issueDistributionChart.setOption(option);
 }
 
 function renderKlineChart(data) {
@@ -519,10 +368,6 @@ function formatVolume(value) {
 
 function updateMomentumCharts(data) {
     debouncedUpdateMomentumBar(data);
-}
-
-function updateQualityTrendChart(data) {
-    debouncedUpdateQualityTrend(data);
 }
 
 function updateKlineChart(data) {
@@ -728,9 +573,7 @@ window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
         if (momentumBarChart) momentumBarChart.resize();
-        if (qualityTrendChart) qualityTrendChart.resize();
         if (klineChart) klineChart.resize();
-        if (issueDistributionChart) issueDistributionChart.resize();
         if (modalKlineChart) modalKlineChart.resize();
     }, 200);
 });

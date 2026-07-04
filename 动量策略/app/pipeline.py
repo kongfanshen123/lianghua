@@ -111,6 +111,21 @@ def fetch_data(session, trade_date: date) -> tuple:
                 continue
 
             if result.success and result.data:
+                # 数据源切换保护：检测是否与历史数据源不一致
+                existing_source = session.query(DailyPrice.data_source).filter(
+                    DailyPrice.symbol_id == symbol.id
+                ).first()
+                if existing_source and existing_source[0] and existing_source[0] != result.data_source:
+                    logger.warning(
+                        f"Data source change detected for {symbol.name}: "
+                        f"{existing_source[0]} -> {result.data_source}. "
+                        f"Clearing old data to prevent mixing."
+                    )
+                    session.query(DailyPrice).filter(
+                        DailyPrice.symbol_id == symbol.id
+                    ).delete()
+                    session.commit()
+
                 for item in result.data:
                     trade_date_obj = datetime.strptime(item["trade_date"], "%Y-%m-%d").date()
 
@@ -178,6 +193,7 @@ def validate_data(session, trade_date: date) -> tuple:
 
     valid_count = 0
     invalid_count = 0
+    abnormal_symbols = set()
 
     for dp in daily_prices:
         data = {
@@ -208,7 +224,16 @@ def validate_data(session, trade_date: date) -> tuple:
             valid_count += 1
         else:
             invalid_count += 1
+            abnormal_symbols.add(dp.symbol_id)
             logger.warning(f"Validation failed for symbol_id {dp.symbol_id}: {result.message}")
+
+    # 将异常标的对应的策略结果标记为 invalid
+    if abnormal_symbols:
+        session.query(StrategyResult).filter(
+            StrategyResult.symbol_id.in_(abnormal_symbols),
+            StrategyResult.trade_date == trade_date
+        ).update({StrategyResult.status: "invalid"}, synchronize_session=False)
+        session.commit()
 
     logger.info(f"Data validation completed: {valid_count} valid, {invalid_count} invalid")
     return True, f"Validated {valid_count}/{valid_count + invalid_count} records"
@@ -248,6 +273,16 @@ def calculate_strategy(session, trade_date: date) -> tuple:
         result = strategy.calculate(symbol.id, price_list, trade_date)
         results.append(result)
 
+        # 计算连续趋势天数
+        if result.status == "valid":
+            prev_results = session.query(StrategyResult).filter(
+                StrategyResult.symbol_id == symbol.id,
+                StrategyResult.trade_date < trade_date,
+                StrategyResult.status == "valid"
+            ).order_by(StrategyResult.trade_date.asc()).limit(500).all()
+            historical_momentums = [float(r.momentum_20d) for r in prev_results]
+            result.consecutive_days = strategy.calculate_consecutive_days(result.momentum_20d, historical_momentums)
+
     ranked_results = strategy.rank(results)
     ranked_results = strategy.calculate_ranking_change(ranked_results, previous_rank_map)
 
@@ -264,6 +299,7 @@ def calculate_strategy(session, trade_date: date) -> tuple:
             existing.ranking = result.ranking
             existing.ranking_change = result.ranking_change
             existing.trend_strength = result.trend_strength
+            existing.consecutive_days = result.consecutive_days
             existing.status = result.status
         else:
             db_result = StrategyResult(
@@ -275,6 +311,7 @@ def calculate_strategy(session, trade_date: date) -> tuple:
                 ranking=result.ranking,
                 ranking_change=result.ranking_change,
                 trend_strength=result.trend_strength,
+                consecutive_days=result.consecutive_days,
                 status=result.status
             )
             session.add(db_result)
@@ -335,7 +372,7 @@ def push_results(session, trade_date: date) -> tuple:
         "strong_stocks": strong_stocks,
         "weak_stocks": weak_stocks,
         "total_count": len(results),
-        "abnormal_count": 0,
+        "abnormal_count": invalid_count,
     }
 
     if config.PUSH_MODE == "card":
@@ -388,15 +425,18 @@ def send_alert(message: str) -> None:
         logger.error(f"Failed to send alert: {e}")
 
 
-def backfill_data(days: int = 60) -> bool:
-    logger.info(f"Starting backfill for last {days} days")
+def backfill_data(days: int = 60, symbol_filter: str = None) -> bool:
+    logger.info(f"Starting backfill for last {days} days{' for ' + symbol_filter if symbol_filter else ''}")
 
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
 
     try:
         with session_scope() as session:
-            symbols = session.query(Symbol).filter(Symbol.status == 1).all()
+            query = session.query(Symbol).filter(Symbol.status == 1)
+            if symbol_filter:
+                query = query.filter(Symbol.symbol == symbol_filter)
+            symbols = query.all()
 
             if not symbols:
                 logger.error("No active symbols found for backfill")
@@ -491,4 +531,124 @@ def backfill_data(days: int = 60) -> bool:
 
     except Exception as e:
         logger.error(f"Backfill failed with exception: {e}", exc_info=True)
+        return False
+
+
+def backfill_momentum(symbol_filter: str = None) -> bool:
+    """回溯所有标的在历史数据范围内的每日动量，落表存储。"""
+    logger.info(f"Starting momentum backfill{' for ' + symbol_filter if symbol_filter else ''}")
+
+    try:
+        with session_scope() as session:
+            query = session.query(Symbol).filter(Symbol.status == 1)
+            if symbol_filter:
+                query = query.filter(Symbol.symbol == symbol_filter)
+            symbols = query.all()
+
+            if not symbols:
+                logger.error("No active symbols found for momentum backfill")
+                return False
+
+            strategy = MomentumStrategy()
+
+            for symbol in symbols:
+                prices = session.query(DailyPrice).filter(
+                    DailyPrice.symbol_id == symbol.id
+                ).order_by(DailyPrice.trade_date).all()
+
+                if not prices or len(prices) < strategy.period + 1:
+                    logger.warning(f"Not enough price data for {symbol.name} ({len(prices) if prices else 0} records)")
+                    continue
+
+                price_list = []
+                for p in prices:
+                    price_list.append({
+                        "trade_date": p.trade_date.strftime("%Y-%m-%d"),
+                        "close_price": float(p.close_price),
+                        "volume": p.volume or 0,
+                        "amount": float(p.amount) if p.amount else 0,
+                    })
+
+                # 计算每个有足够数据的日期的动量
+                results_by_date = {}
+                for i in range(strategy.period, len(price_list)):
+                    trade_date_str = price_list[i]["trade_date"]
+                    trade_date_obj = datetime.strptime(trade_date_str, "%Y-%m-%d").date()
+                    prices_up_to = price_list[:i + 1]
+                    result = strategy.calculate(symbol.id, prices_up_to, trade_date_obj)
+                    results_by_date[trade_date_str] = result
+
+                # 计算连续趋势天数
+                sorted_dates = sorted(results_by_date.keys())
+                all_momentums = [results_by_date[d].momentum_20d for d in sorted_dates]
+                for i, date_str in enumerate(sorted_dates):
+                    result = results_by_date[date_str]
+                    if result.status == "valid":
+                        result.consecutive_days = strategy.calculate_consecutive_days(
+                            result.momentum_20d, all_momentums[:i]
+                        )
+
+                # 存储结果（不计算排名，排名在后续单独计算）
+                for date_str, result in results_by_date.items():
+                    trade_date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+                    existing = session.query(StrategyResult).filter(
+                        StrategyResult.symbol_id == result.symbol_id,
+                        StrategyResult.trade_date == trade_date_obj
+                    ).first()
+
+                    if existing:
+                        existing.momentum_20d = result.momentum_20d
+                        existing.volume_confirmed = result.volume_confirmed
+                        existing.volume_change_pct = result.volume_change_pct
+                        existing.trend_strength = result.trend_strength
+                        existing.consecutive_days = result.consecutive_days
+                        existing.status = result.status
+                    else:
+                        db_result = StrategyResult(
+                            symbol_id=result.symbol_id,
+                            trade_date=trade_date_obj,
+                            momentum_20d=result.momentum_20d,
+                            volume_confirmed=result.volume_confirmed,
+                            volume_change_pct=result.volume_change_pct,
+                            trend_strength=result.trend_strength,
+                            consecutive_days=result.consecutive_days,
+                            status=result.status
+                        )
+                        session.add(db_result)
+
+                session.commit()
+                logger.info(f"Backfilled momentum for {symbol.name}: {len(results_by_date)} dates")
+
+            # 为每个日期计算排名和排名变化
+            all_dates = [r[0] for r in session.query(StrategyResult.trade_date).distinct().all()]
+            all_dates.sort()
+
+            for trade_date_obj in all_dates:
+                results = session.query(StrategyResult).filter(
+                    StrategyResult.trade_date == trade_date_obj,
+                    StrategyResult.status == "valid"
+                ).order_by(StrategyResult.momentum_20d.desc()).all()
+
+                for idx, result in enumerate(results):
+                    result.ranking = idx + 1
+
+                # 排名变化
+                prev_day = get_previous_trading_day(trade_date_obj)
+                prev_results = session.query(StrategyResult).filter(
+                    StrategyResult.trade_date == prev_day
+                ).all()
+                prev_rank_map = {r.symbol_id: r.ranking for r in prev_results}
+
+                for result in results:
+                    prev_rank = prev_rank_map.get(result.symbol_id)
+                    result.ranking_change = prev_rank - result.ranking if prev_rank is not None else 0
+
+                session.commit()
+
+            logger.info(f"Momentum backfill completed: {len(all_dates)} dates processed")
+            return True
+
+    except Exception as e:
+        logger.error(f"Momentum backfill failed with exception: {e}", exc_info=True)
         return False

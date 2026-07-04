@@ -1,6 +1,8 @@
 let currentPricePage = 1;
+let currentHistoryPage = 1;
 let isLoading = false;
-let currentCategory = 'market';
+let currentCategory = 'all';
+let qualityRefreshTimer = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     initCharts();
@@ -8,7 +10,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateCurrentDate();
     initDatePickers();
     await loadLatestResultsForMomentum();
+    await loadHistorySymbolOptions();
     await loadSystemStatus();
+    startQualityAutoRefresh();
     
     const searchInput = document.getElementById('globalSearch');
     searchInput.addEventListener('keypress', function(e) {
@@ -51,6 +55,40 @@ function initNavigation() {
     });
 }
 
+function showToast(message, type = 'error') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const icon = type === 'error' ? 'fa-exclamation-circle' : type === 'success' ? 'fa-check-circle' : 'fa-info-circle';
+    toast.innerHTML = `<i class="fa ${icon}"></i><span>${message}</span>`;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => toast.classList.add('show'), 10);
+    
+    const duration = type === 'error' ? 5000 : 3000;
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
+function startQualityAutoRefresh() {
+    if (qualityRefreshTimer) clearInterval(qualityRefreshTimer);
+    qualityRefreshTimer = setInterval(async () => {
+        const qualityTab = document.getElementById('tabQuality');
+        if (qualityTab && qualityTab.classList.contains('active')) {
+            clearCache();
+            await loadQualityDetails();
+            await loadCoverage();
+        }
+        await loadSystemStatus();
+    }, 60000);
+}
+
 function switchPage(pageId) {
     document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
     document.querySelector(`.nav-item[data-target="${pageId}"]`).classList.add('active');
@@ -59,11 +97,8 @@ function switchPage(pageId) {
     document.getElementById(pageId).classList.add('active');
     
     if (pageId === 'tabQuality') {
-        loadQualitySummary();
         loadQualityDetails();
         loadCoverage();
-        loadQualityTrend();
-        updateIssueDistributionChart();
     } else if (pageId === 'tabData') {
         loadSymbols();
         loadPriceSymbolOptions(true);
@@ -319,10 +354,9 @@ async function loadSystemStatus() {
 async function refreshAllData() {
     clearCache();
     await loadLatestResultsForMomentum();
-    loadQualitySummary();
+    loadHistoryResults();
     loadQualityDetails();
     loadCoverage();
-    loadQualityTrend();
     loadSymbols();
     await loadSystemStatus();
 }
@@ -540,77 +574,76 @@ async function loadPriceSymbolOptions(selectDefault = false) {
 async function loadPrices(page = 1) {
     currentPricePage = page;
     const symbol = document.getElementById('priceSymbol').value;
+    const startDate = document.getElementById('priceStartDate') ? document.getElementById('priceStartDate').value : '';
+    const endDate = document.getElementById('priceEndDate') ? document.getElementById('priceEndDate').value : '';
     
     const tbody = document.getElementById('priceTable').querySelector('tbody');
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#6b6b80;"><i class="fa fa-spinner fa-spin"></i> 加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:40px; color:#6b6b80;"><i class="fa fa-spinner fa-spin"></i> 加载中...</td></tr>';
     
     try {
         const tableParams = { page, page_size: 50 };
         if (symbol) tableParams.symbol = symbol;
+        if (startDate) tableParams.start_date = startDate;
+        if (endDate) tableParams.end_date = endDate;
+        
+        const klineParams = { page: 1, page_size: 1000 };
+        if (symbol) klineParams.symbol = symbol;
+        if (startDate) klineParams.start_date = startDate;
+        if (endDate) klineParams.end_date = endDate;
         
         const [tableResult, klineResult] = await Promise.all([
             getPrices(tableParams),
-            getPrices({ symbol, page: 1, page_size: 1000 })
+            getPrices(klineParams)
         ]);
         
         if (typeof updateKlineChart === 'function') {
             updateKlineChart(klineResult.data || []);
         }
         
-        const rows = tableResult.data.map(item => `
-            <tr>
-                <td>${item.trade_date}</td>
-                <td>${item.symbol || item.name || ''}</td>
-                <td>${item.open_price}</td>
-                <td>${item.high_price}</td>
-                <td>${item.low_price}</td>
-                <td>${item.close_price}</td>
-                <td>${formatNumber(item.volume)}</td>
-                <td>${formatNumber(item.amount)}</td>
-            </tr>
-        `);
+        const dataSourceMap = {
+            'sina': '新浪',
+            'akshare': 'AkShare',
+            'yfinance': 'YFinance',
+            'mock': '模拟',
+            'lude': 'Lude'
+        };
         
-        tbody.innerHTML = rows.join('');
+        const rows = tableResult.data.map(item => {
+            const dataSourceLabel = dataSourceMap[item.data_source] || item.data_source || '-';
+            const sourceBadge = item.data_source === 'mock' 
+                ? `<span class="badge" style="background: rgba(251,191,36,0.15); color: #fbbf24;">${dataSourceLabel}</span>`
+                : `<span class="badge" style="background: rgba(74,158,255,0.15); color: #4a9eff;">${dataSourceLabel}</span>`;
+            
+            return `
+                <tr>
+                    <td>${item.trade_date}</td>
+                    <td>${item.symbol || item.name || ''}</td>
+                    <td>${item.open_price}</td>
+                    <td>${item.high_price}</td>
+                    <td>${item.low_price}</td>
+                    <td>${item.close_price}</td>
+                    <td>${formatNumber(item.volume)}</td>
+                    <td>${formatNumber(item.amount)}</td>
+                    <td>${sourceBadge}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = rows.join('') || '<tr><td colspan="9" style="text-align:center; padding:40px; color:#6b6b80;">暂无数据</td></tr>';
         renderPagination(tableResult.total, page, 50, 'pricePagination', '', loadPrices);
     } catch (error) {
         console.error('Failed to load prices:', error);
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#f87171;">加载价格数据失败</td></tr>';
+        showToast('加载价格数据失败: ' + error.message);
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:40px; color:#f87171;">加载价格数据失败</td></tr>';
     }
 }
 
-function viewPrices(symbol) {
-    document.getElementById('priceSymbol').value = symbol;
+async function viewPrices(symbol) {
+    switchPage('tabData');
     switchSubPage('dataPrices');
+    await loadPriceSymbolOptions();
+    document.getElementById('priceSymbol').value = symbol;
     loadPrices();
-}
-
-async function loadQualitySummary() {
-    try {
-        const result = await getQualitySummary();
-        
-        animateValue('statActiveSymbols', result.active_symbols);
-        animateValue('statTotalRecords', formatNumber(result.total_price_records));
-        
-        const daysDelay = document.getElementById('statDaysDelay');
-        daysDelay.textContent = result.days_since_latest;
-        if (result.days_since_latest > 5) {
-            daysDelay.style.color = '#f87171';
-        } else {
-            daysDelay.style.color = '#4ade80';
-        }
-        
-        const issues = result.symbols_without_data + result.duplicate_records + 
-                      result.zero_volume_non_suspended + result.negative_price + result.price_jumps;
-        animateValue('statIssues', issues);
-        
-        animateValue('issueNoDataCount', result.symbols_without_data);
-        animateValue('issueNegativePriceCount', result.negative_price);
-        animateValue('issueZeroVolumeCount', result.zero_volume_non_suspended);
-        animateValue('issueDuplicateCount', result.duplicate_records);
-        animateValue('issuePriceJumpCount', result.price_jumps || 0);
-    } catch (error) {
-        console.error('Failed to load quality summary:', error);
-    }
 }
 
 async function loadQualityDetails() {
@@ -696,61 +729,16 @@ async function loadCoverage() {
     }
 }
 
-async function loadQualityTrend() {
-    try {
-        const result = await getQualityTrend(30);
-        updateQualityTrendChart(result.data);
-        updateIssueDistributionChart();
-    } catch (error) {
-        console.error('Failed to load quality trend:', error);
-    }
-}
-
-async function updateIssueDistributionChart() {
-    try {
-        const result = await getQualityDetails();
-        const distribution = {};
-        
-        result.issues.forEach(item => {
-            distribution[item.type] = (distribution[item.type] || 0) + 1;
-        });
-        
-        const typeLabels = {
-            no_data: '无数据',
-            negative_price: '价格异常',
-            zero_volume: '零成交量',
-            duplicate: '重复数据',
-            price_jump: '价格跳变'
-        };
-        
-        const colors = {
-            no_data: '#fbbf24',
-            negative_price: '#f87171',
-            zero_volume: '#fbbf24',
-            duplicate: '#f87171',
-            price_jump: '#f87171'
-        };
-        
-        const data = Object.entries(distribution).map(([key, value]) => ({
-            name: typeLabels[key] || key,
-            value: value,
-            itemStyle: { color: colors[key] || '#6b6b80' }
-        }));
-        
-        renderIssueDistributionChart(data);
-    } catch (error) {
-        console.error('Failed to update issue distribution chart:', error);
-    }
-}
-
 async function loadLatestResultsForMomentum() {
     try {
         const result = await getLatestResults(currentCategory === 'all' ? null : currentCategory);
         
         if (result.data && result.data.length > 0) {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-            document.getElementById('momentumTimestamp').textContent = `数据更新时间: ${timeStr}`;
+            const tradeDate = result.trade_date || '';
+            const dateObj = tradeDate ? new Date(tradeDate) : new Date();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            document.getElementById('momentumTimestamp').textContent = `数据更新: ${month}-${day}`;
         }
         
         updateMomentumCharts(result.data);
@@ -775,6 +763,13 @@ async function loadLatestResultsForMomentum() {
             const momentumVal = parseFloat(item.momentum_20d) || 0;
             const momentumColor = momentumVal >= 0 ? 'color: var(--accent-green); font-weight: 600;' : 'color: var(--accent-red); font-weight: 600;';
             
+            const consecutiveDays = item.consecutive_days || 0;
+            const consecutiveBadge = consecutiveDays > 0
+                ? (momentumVal >= 0
+                    ? `<span class="badge" style="background: rgba(74,222,128,0.15); color: #4ade80;">${consecutiveDays}日上涨</span>`
+                    : `<span class="badge" style="background: rgba(248,113,113,0.15); color: #f87171;">${consecutiveDays}日下跌</span>`)
+                : '-';
+            
             return `
                 <tr onclick="openKlineModal('${item.symbol}', '${item.name}')" style="cursor: pointer;">
                     <td>${item.ranking}</td>
@@ -784,6 +779,7 @@ async function loadLatestResultsForMomentum() {
                     <td>${item.volume_confirmed ? '✓' : '✗'}</td>
                     <td>${item.volume_change_pct}%</td>
                     <td><span style="color: ${trendColor}">${item.trend_strength}</span></td>
+                    <td>${consecutiveBadge}</td>
                     <td>${changeIcon}</td>
                 </tr>
             `;
@@ -791,7 +787,8 @@ async function loadLatestResultsForMomentum() {
         
         tbody.innerHTML = rows.join('');
     } catch (error) {
-        console.error('Failed to load momentum results:', error);
+        console.error('Failed to load latest results for momentum:', error);
+        showToast('加载动量信号数据失败', 'error');
     }
 }
 
@@ -894,15 +891,6 @@ function closeUpdateModal() {
     document.getElementById('updateModal').classList.remove('show');
 }
 
-function openRepairModal() {
-    document.getElementById('repairModal').classList.add('show');
-    document.getElementById('repairResult').classList.remove('show');
-}
-
-function closeRepairModal() {
-    document.getElementById('repairModal').classList.remove('show');
-}
-
 function openKlineModal(symbol, name) {
     document.getElementById('klineModalTitle').textContent = `${symbol} - ${name} K线图`;
     document.getElementById('klineModal').classList.add('show');
@@ -929,7 +917,7 @@ async function loadKlineForModal(symbol, startDate, endDate) {
 }
 
 async function executeTask(taskType) {
-    const resultEl = document.getElementById(taskType === 'repair' ? 'repairResult' : 'updateResult');
+    const resultEl = document.getElementById('updateResult');
     resultEl.className = 'modal-result loading show';
     resultEl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 正在执行，请稍候...';
     
@@ -945,28 +933,122 @@ async function executeTask(taskType) {
             case 'full':
                 result = await triggerFullPipeline();
                 break;
-            case 'repair':
-                result = await triggerRepair();
+            case 'backfill-momentum':
+                result = await triggerBackfillMomentum();
                 break;
         }
         
         if (result.status === 'success') {
             resultEl.className = 'modal-result success show';
             resultEl.innerHTML = '<i class="fa fa-check-circle"></i> 执行成功！';
+            showToast('任务执行成功', 'success');
             setTimeout(() => {
-                if (taskType === 'repair') {
-                    closeRepairModal();
-                } else {
-                    closeUpdateModal();
-                }
+                closeUpdateModal();
                 refreshAllData();
             }, 1500);
         } else {
             resultEl.className = 'modal-result error show';
             resultEl.innerHTML = `<i class="fa fa-exclamation-circle"></i> 执行失败：${result.message.substring(0, 200)}`;
+            showToast('任务执行失败', 'error');
         }
     } catch (error) {
         resultEl.className = 'modal-result error show';
         resultEl.innerHTML = `<i class="fa fa-exclamation-circle"></i> 执行失败：${error.message}`;
+        showToast('任务执行异常: ' + error.message, 'error');
+    }
+}
+
+async function loadHistorySymbolOptions() {
+    try {
+        const result = await getSymbols();
+        const select = document.getElementById('historySymbol');
+        if (!select) return;
+        select.innerHTML = '<option value="">全部标的</option>';
+        
+        const sortedData = [...result.data].sort((a, b) => {
+            if (a.category === 'market' && b.category !== 'market') return -1;
+            if (a.category !== 'market' && b.category === 'market') return 1;
+            return a.symbol.localeCompare(b.symbol);
+        });
+        
+        sortedData.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.symbol;
+            option.textContent = `${item.symbol} - ${item.name}`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load history symbol options:', error);
+    }
+}
+
+async function loadHistoryResults(page = 1) {
+    currentHistoryPage = page;
+    const symbol = document.getElementById('historySymbol') ? document.getElementById('historySymbol').value : '';
+    const category = document.getElementById('historyCategory') ? document.getElementById('historyCategory').value : '';
+    const startDate = document.getElementById('historyStartDate') ? document.getElementById('historyStartDate').value : '';
+    const endDate = document.getElementById('historyEndDate') ? document.getElementById('historyEndDate').value : '';
+    
+    const tbody = document.getElementById('historyTable').querySelector('tbody');
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#6b6b80;"><i class="fa fa-spinner fa-spin"></i> 加载中...</td></tr>';
+    
+    try {
+        const params = { page, page_size: 50 };
+        if (symbol) params.symbol = symbol;
+        if (category) params.category = category;
+        if (startDate) params.start_date = startDate;
+        if (endDate) params.end_date = endDate;
+        
+        const result = await getResultsHistory(params);
+        
+        const categoryMap = {
+            'market': '大盘指标',
+            'industry': '行业指标'
+        };
+        
+        if (!result.data || result.data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#6b6b80;">暂无历史动量数据</td></tr>';
+            document.getElementById('historyPagination').innerHTML = '';
+            return;
+        }
+        
+        const rows = result.data.map(item => {
+            const trendColor = getTrendColor(item.trend_strength);
+            const categoryText = categoryMap[item.category] || item.category;
+            const momentumVal = parseFloat(item.momentum_20d) || 0;
+            const momentumColor = momentumVal >= 0 ? 'color: var(--accent-green); font-weight: 600;' : 'color: var(--accent-red); font-weight: 600;';
+            
+            const consecutiveDays = item.consecutive_days || 0;
+            const consecutiveBadge = consecutiveDays > 0
+                ? (momentumVal >= 0
+                    ? `<span class="badge" style="background: rgba(74,222,128,0.15); color: #4ade80;">${consecutiveDays}日</span>`
+                    : `<span class="badge" style="background: rgba(248,113,113,0.15); color: #f87171;">${consecutiveDays}日</span>`)
+                : '-';
+            
+            const tradeDate = item.trade_date || '';
+            const dateObj = tradeDate ? new Date(tradeDate) : null;
+            const dateDisplay = dateObj
+                ? `${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`
+                : '-';
+            
+            return `
+                <tr>
+                    <td>${dateDisplay}</td>
+                    <td>${item.symbol} - ${item.name}</td>
+                    <td>${categoryText}</td>
+                    <td style="${momentumColor}">${formatMomentum(item.momentum_20d)}</td>
+                    <td><span style="color: ${trendColor}">${item.trend_strength}</span></td>
+                    <td>${consecutiveBadge}</td>
+                    <td>${item.volume_confirmed ? '✓' : '✗'}</td>
+                    <td>${item.ranking || '-'}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = rows.join('');
+        renderPagination(result.total, page, 50, 'historyPagination', '', loadHistoryResults);
+    } catch (error) {
+        console.error('Failed to load history results:', error);
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#f87171;">加载历史动量数据失败</td></tr>';
     }
 }

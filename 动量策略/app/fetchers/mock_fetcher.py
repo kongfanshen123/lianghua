@@ -5,6 +5,16 @@ from .base_fetcher import BaseFetcher, FetcherResult
 
 
 class MockFetcher(BaseFetcher):
+    # 各标的的真实价格参考范围（避免生成与现实差距过大的数据）
+    REALISTIC_PRICES = {
+        "512880": (0.8, 1.5),   # 证券ETF
+        "515030": (1.0, 2.0),   # 新能源车ETF
+        "512480": (0.8, 2.0),   # 半导体ETF
+        "512690": (0.6, 1.5),   # 酒ETF
+        "159928": (3.0, 8.0),   # 消费ETF
+    }
+    DEFAULT_RANGE = (1.0, 10.0)
+
     def __init__(self):
         super().__init__(request_interval=0, max_retry=1, retry_delay=0)
         self.data_source = "mock"
@@ -67,7 +77,8 @@ class MockFetcher(BaseFetcher):
         return result
 
     def _initialize_cache(self, symbol: str):
-        base_price = random.uniform(10, 500)
+        price_range = self.REALISTIC_PRICES.get(symbol, self.DEFAULT_RANGE)
+        base_price = random.uniform(price_range[0], price_range[1])
         self.price_cache[symbol] = {
             "base_price": base_price,
             "trend": random.uniform(-0.02, 0.02),

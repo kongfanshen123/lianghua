@@ -1,6 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 from app.config import config
 
 engine = create_engine(config.DATABASE_URL, connect_args={"check_same_thread": False})
@@ -33,4 +32,12 @@ def session_scope():
 
 def init_db():
     from app.models import Symbol, DailyPrice, StrategyResult
+    from sqlalchemy import text
     Base.metadata.create_all(bind=engine)
+    # Migration: add consecutive_days column if not exists
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE strategy_results ADD COLUMN consecutive_days INTEGER DEFAULT 0"))
+            conn.commit()
+    except Exception:
+        pass  # Column already exists

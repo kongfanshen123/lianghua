@@ -20,6 +20,8 @@ class SinaFetcher(BaseFetcher):
             "Accept": "*/*",
             "Referer": "https://finance.sina.com.cn",
         })
+        # Sina K线数据为不复权数据，需标记
+        self.is_adjusted = False
 
     def fetch_daily_price(self, symbol: str, trade_date: Optional[date] = None) -> FetcherResult:
         result = FetcherResult()
@@ -159,9 +161,12 @@ class SinaFetcher(BaseFetcher):
                 "low_price": float(row.get("low_price", row.get("low", 0))),
                 "volume": int(row.get("volume", 0)),
                 "amount": float(row.get("amount", 0)),
+                # Sina K线数据为不复权数据，adjusted_factor 固定为 1.0
+                # 后续计算需注意：跨除权除息日时动量计算会失真
                 "adjusted_factor": 1.0,
                 "is_suspended": 0,
                 "is_ex_dividend": 0,
+                "data_source_note": "unadjusted",
             })
         return data
 

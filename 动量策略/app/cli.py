@@ -29,6 +29,13 @@ def main_cli():
 
     parser_backfill = subparsers.add_parser("backfill", help="Backfill historical data")
     parser_backfill.add_argument("--days", type=int, default=60, help="Number of days to backfill")
+    parser_backfill.add_argument("--symbol", type=str, default=None, help="Specific symbol to backfill")
+
+    parser_backfill_momentum = subparsers.add_parser("backfill-momentum", help="Backfill historical momentum results")
+    parser_backfill_momentum.add_argument("--symbol", type=str, default=None, help="Specific symbol to backfill")
+
+    parser_repair = subparsers.add_parser("repair", help="Repair anomalous data")
+    parser_repair.add_argument("--symbol", type=str, default=None, help="Specific symbol to repair")
 
     parser_scheduler = subparsers.add_parser("scheduler", help="Start scheduler")
 
@@ -69,12 +76,55 @@ def main_cli():
     if args.command == "run":
         trade_date = parse_date(args.date)
         run_pipeline(trade_date)
+    elif args.command == "fetch":
+        from app.pipeline import fetch_data
+        from app.database import session_scope
+        trade_date = parse_date(args.date)
+        with session_scope() as session:
+            success, message = fetch_data(session, trade_date)
+            if success:
+                print(f"Fetch completed: {message}")
+            else:
+                print(f"Fetch failed: {message}")
+    elif args.command == "calculate":
+        from app.pipeline import calculate_strategy
+        from app.database import session_scope
+        trade_date = parse_date(args.date)
+        with session_scope() as session:
+            success, message = calculate_strategy(session, trade_date)
+            if success:
+                print(f"Calculate completed: {message}")
+            else:
+                print(f"Calculate failed: {message}")
+    elif args.command == "push":
+        from app.pipeline import push_results
+        from app.database import session_scope
+        trade_date = parse_date(args.date)
+        with session_scope() as session:
+            success, message = push_results(session, trade_date)
+            if success:
+                print(f"Push completed: {message}")
+            else:
+                print(f"Push failed: {message}")
     elif args.command == "backfill":
-        result = backfill_data(args.days)
+        result = backfill_data(args.days, args.symbol)
         if result:
             print(f"Backfill completed successfully for {args.days} days")
         else:
             print("Backfill failed")
+    elif args.command == "backfill-momentum":
+        from app.pipeline import backfill_momentum
+        result = backfill_momentum(args.symbol)
+        if result:
+            print("Momentum backfill completed successfully")
+        else:
+            print("Momentum backfill failed")
+    elif args.command == "repair":
+        result = repair_data(args.symbol)
+        if result:
+            print("Repair completed successfully")
+        else:
+            print("Repair failed")
     elif args.command == "scheduler":
         start_scheduler()
     elif args.command == "db":
@@ -227,6 +277,80 @@ def handle_symbol_command(args):
 
     finally:
         session.close()
+
+
+def repair_data(symbol: str = None) -> bool:
+    """检测并修复异常数据：删除重复记录、删除价格异常记录、重新回填缺失数据"""
+    from app.database import session_scope
+    from sqlalchemy import text
+
+    logger.info(f"Starting data repair{' for ' + symbol if symbol else ''}")
+
+    try:
+        with session_scope() as session:
+            # 1. 删除重复记录（保留最新一条）
+            dup_result = session.execute(text("""
+                DELETE FROM daily_prices
+                WHERE id NOT IN (
+                    SELECT MAX(id) FROM daily_prices
+                    GROUP BY symbol_id, trade_date
+                )
+            """))
+            dup_count = dup_result.rowcount
+            session.commit()
+            logger.info(f"Deleted {dup_count} duplicate records")
+
+            # 2. 删除价格异常记录（close_price <= 0）
+            neg_result = session.execute(text("""
+                DELETE FROM daily_prices WHERE close_price <= 0
+            """))
+            neg_count = neg_result.rowcount
+            session.commit()
+            logger.info(f"Deleted {neg_count} records with invalid prices")
+
+            # 3. 删除日间价格跳变超过 30% 的记录（疑似数据源混用）
+            jump_result = session.execute(text("""
+                DELETE FROM daily_prices
+                WHERE id IN (
+                    SELECT dp.id FROM daily_prices dp
+                    JOIN (
+                        SELECT symbol_id, trade_date, close_price,
+                               LAG(close_price) OVER (PARTITION BY symbol_id ORDER BY trade_date) as prev_close
+                        FROM daily_prices
+                    ) lag_t
+                    ON dp.symbol_id = lag_t.symbol_id AND dp.trade_date = lag_t.trade_date
+                    WHERE lag_t.prev_close IS NOT NULL
+                      AND lag_t.prev_close > 0
+                      AND ABS((lag_t.close_price - lag_t.prev_close) / lag_t.prev_close * 100) > 30
+                )
+            """))
+            jump_count = jump_result.rowcount
+            session.commit()
+            logger.info(f"Deleted {jump_count} records with price jumps > 30%")
+
+            # 4. 标记对应的策略结果为 invalid
+            session.execute(text("""
+                UPDATE strategy_results
+                SET status = 'invalid'
+                WHERE symbol_id IN (
+                    SELECT DISTINCT symbol_id FROM daily_prices
+                    WHERE close_price <= 0
+                )
+            """))
+            session.commit()
+
+        # 5. 重新回填缺失数据
+        total_deleted = dup_count + neg_count + jump_count
+        if total_deleted > 0 or symbol:
+            logger.info("Re-backfilling data to fill gaps...")
+            backfill_data(120, symbol)
+
+        logger.info(f"Repair completed: {dup_count} duplicates, {neg_count} invalid prices, {jump_count} price jumps removed")
+        return True
+
+    except Exception as e:
+        logger.error(f"Repair failed with exception: {e}", exc_info=True)
+        return False
 
 
 def reset_db():

@@ -1,15 +1,29 @@
 import sqlite3
 import json
+import os
 import subprocess
 from datetime import date, datetime, timedelta
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI(title="动量策略数据管理", version="2.0.0")
 
-DB_PATH = "./data/momentum_strategy.db"
+# 允许跨域
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 使用绝对路径，避免 CWD 依赖
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(_BASE_DIR, "data", "momentum_strategy.db")
+FRONTEND_DIR = os.path.join(_BASE_DIR, "frontend")
 
 
 def get_db():
@@ -20,7 +34,7 @@ def get_db():
 
 @app.get("/")
 async def root():
-    return FileResponse("./frontend/index.html")
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
 @app.get("/api/symbols")
@@ -245,6 +259,60 @@ async def get_results(
     total = cursor.fetchone()[0]
     
     query += " ORDER BY sr.ranking LIMIT ? OFFSET ?"
+    params.append(page_size)
+    params.append((page - 1) * page_size)
+    
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    
+    conn.close()
+    
+    return {
+        "data": [dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size
+    }
+
+
+@app.get("/api/results/history")
+async def get_results_history(
+    symbol: str = Query(None, description="标的代码"),
+    category: str = Query(None, description="分类筛选: market/industry"),
+    start_date: str = Query(None, description="开始日期"),
+    end_date: str = Query(None, description="结束日期"),
+    page: int = Query(1, description="页码"),
+    page_size: int = Query(50, description="每页大小")
+):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    query = """
+        SELECT sr.*, s.symbol, s.name, s.category 
+        FROM strategy_results sr 
+        JOIN symbols s ON sr.symbol_id = s.id
+        WHERE sr.status = 'valid'
+    """
+    params = []
+    
+    if symbol:
+        query += " AND s.symbol = ?"
+        params.append(symbol)
+    if category and category != "all":
+        query += " AND s.category = ?"
+        params.append(category)
+    if start_date:
+        query += " AND sr.trade_date >= ?"
+        params.append(start_date)
+    if end_date:
+        query += " AND sr.trade_date <= ?"
+        params.append(end_date)
+    
+    query_count = "SELECT COUNT(*) FROM (" + query + ") as t"
+    cursor.execute(query_count, params)
+    total = cursor.fetchone()[0]
+    
+    query += " ORDER BY sr.trade_date DESC, sr.ranking LIMIT ? OFFSET ?"
     params.append(page_size)
     params.append((page - 1) * page_size)
     
@@ -610,15 +678,11 @@ async def trigger_fetch(
     days: int = Query(60, description="回溯天数")
 ):
     try:
-        cmd = ["python3", "main.py", "--fetch"]
+        cmd = ["python3", "main.py", "backfill", "--days", str(days)]
         if symbol:
-            cmd.append("--symbol")
-            cmd.append(symbol)
-        if days:
-            cmd.append("--days")
-            cmd.append(str(days))
+            cmd.extend(["--symbol", symbol])
         
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd="./", timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=_BASE_DIR, timeout=300)
         
         if result.returncode == 0:
             return {"status": "success", "message": result.stdout}
@@ -632,8 +696,8 @@ async def trigger_fetch(
 async def trigger_calculate():
     try:
         result = subprocess.run(
-            ["python3", "main.py", "--calculate"],
-            capture_output=True, text=True, cwd="./", timeout=300
+            ["python3", "main.py", "calculate"],
+            capture_output=True, text=True, cwd=_BASE_DIR, timeout=300
         )
         
         if result.returncode == 0:
@@ -649,12 +713,11 @@ async def repair_data(
     symbol: str = Query(None, description="指定标的代码，为空则修复全部")
 ):
     try:
-        cmd = ["python3", "main.py", "--repair"]
+        cmd = ["python3", "main.py", "repair"]
         if symbol:
-            cmd.append("--symbol")
-            cmd.append(symbol)
+            cmd.extend(["--symbol", symbol])
         
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd="./", timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=_BASE_DIR, timeout=300)
         
         if result.returncode == 0:
             return {"status": "success", "message": result.stdout}
@@ -668,9 +731,28 @@ async def repair_data(
 async def trigger_full_pipeline():
     try:
         result = subprocess.run(
-            ["python3", "main.py", "--run"],
-            capture_output=True, text=True, cwd="./", timeout=600
+            ["python3", "main.py", "run"],
+            capture_output=True, text=True, cwd=_BASE_DIR, timeout=600
         )
+        
+        if result.returncode == 0:
+            return {"status": "success", "message": result.stdout}
+        else:
+            return {"status": "error", "message": result.stderr}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/tasks/backfill-momentum")
+async def trigger_backfill_momentum(
+    symbol: str = Query(None, description="指定标的代码，为空则全部回溯")
+):
+    try:
+        cmd = ["python3", "main.py", "backfill-momentum"]
+        if symbol:
+            cmd.extend(["--symbol", symbol])
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=_BASE_DIR, timeout=600)
         
         if result.returncode == 0:
             return {"status": "success", "message": result.stdout}
@@ -720,7 +802,7 @@ async def get_system_status():
     return status
 
 
-app.mount("/static", StaticFiles(directory="./frontend/static"), name="static")
+app.mount("/static", StaticFiles(directory=os.path.join(FRONTEND_DIR, "static")), name="static")
 
 if __name__ == "__main__":
     import uvicorn

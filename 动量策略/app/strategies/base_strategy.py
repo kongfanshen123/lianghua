@@ -16,6 +16,7 @@ class StrategyResult:
         self.ranking: int = 0
         self.ranking_change: int = 0
         self.trend_strength: str = ""
+        self.consecutive_days: int = 0
         self.status: str = "valid"
         self.message: str = ""
 
