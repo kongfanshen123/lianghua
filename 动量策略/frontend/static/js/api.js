@@ -207,3 +207,10 @@ async function triggerBackfillMomentum(symbol = null) {
     if (symbol) params.symbol = symbol;
     return await fetchAPI('/tasks/backfill-momentum', params, 'POST');
 }
+
+async function getPortfolioTop(symbols, topN = 3, strategy = 'momentum', startDate = null, endDate = null, page = 1, pageSize = 50) {
+    const params = { symbols: symbols.join(','), top_n: topN, strategy, page, page_size: pageSize };
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    return await fetchAPI('/portfolio/top', params);
+}

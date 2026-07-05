@@ -80,11 +80,17 @@
                 <div id="tabMomentum" class="page-tab active">
                     <div class="page-header">
                         <div class="header-left">
-                            <h1 class="page-title">最新信号</h1>
-                            <div class="category-tabs" id="momentumCategoryTabs">
+                            <h1 class="page-title">动量信号</h1>
+                            <div class="header-tabs">
+                                <button class="header-tab active" data-subtab="subLatest">最新信号</button>
+                                <button class="header-tab" data-subtab="subHistory">历史信号</button>
+                                <button class="header-tab" data-subtab="subPortfolio">精选集</button>
+                            </div>
+                            <div class="category-tabs" id="momentumCategoryTabs" style="margin-left: 16px;">
                                 <button class="category-tab active" data-category="all">全部</button>
                                 <button class="category-tab" data-category="market">大盘指标</button>
                                 <button class="category-tab" data-category="industry">行业指标</button>
+                                <button class="category-tab" data-category="bond">债券指标</button>
                             </div>
                             <div class="strategy-tabs" id="strategyTabs" style="margin-left: 16px;">
                                 <button class="strategy-tab active" data-strategy="momentum">20日量价动量</button>
@@ -96,88 +102,158 @@
                         </div>
                     </div>
 
-                    <div class="charts-grid">
-                        <div class="chart-card large">
+                    <!-- 最新信号 -->
+                    <div id="subLatest" class="sub-page">
+                        <div class="charts-grid">
+                            <div class="chart-card large">
+                                <div class="card-title">
+                                    <h3>动量排名分布</h3>
+                                </div>
+                                <div class="chart-container" id="momentumBarChart"></div>
+                            </div>
+                        </div>
+
+                        <div class="data-card">
                             <div class="card-title">
-                                <h3>动量排名分布</h3>
+                                <h3>策略结果详情</h3>
                             </div>
-                            <div class="chart-container" id="momentumBarChart"></div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="momentumTable">
+                                    <thead>
+                                        <tr>
+                                            <th>排名</th>
+                                            <th>标的</th>
+                                            <th>分类</th>
+                                            <th>20日动量</th>
+                                            <th>量价确认</th>
+                                            <th>成交量变化</th>
+                                            <th>趋势强度</th>
+                                            <th>连续天数</th>
+                                            <th>排名变化</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="data-card">
-                        <div class="card-title">
-                            <h3>策略结果详情</h3>
-                        </div>
-                        <div class="table-wrapper">
-                            <table class="data-table" id="momentumTable">
-                                <thead>
-                                    <tr>
-                                        <th>排名</th>
-                                        <th>标的</th>
-                                        <th>分类</th>
-                                        <th>20日动量</th>
-                                        <th>量价确认</th>
-                                        <th>成交量变化</th>
-                                        <th>趋势强度</th>
-                                        <th>连续天数</th>
-                                        <th>排名变化</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
+                    <!-- 历史信号 -->
+                    <div id="subHistory" class="sub-page hidden">
+                        <div class="data-card">
+                            <div class="card-title">
+                                <h3>历史动量信号</h3>
+                                <div class="card-actions">
+                                    <select id="historySymbol" class="form-select" onchange="loadHistoryResults()">
+                                        <option value="">全部标的</option>
+                                    </select>
+                                    <select id="historyCategory" class="form-select" onchange="loadHistoryResults()">
+                                        <option value="">全部分类</option>
+                                        <option value="market">大盘指标</option>
+                                        <option value="industry">行业指标</option>
+                                        <option value="bond">债券指标</option>
+                                    </select>
+                                    <div class="date-picker-wrapper">
+                                        <button class="date-picker" data-target="historyStartDate">
+                                            <span class="date-picker-value">开始日期</span>
+                                            <i class="fa fa-calendar"></i>
+                                        </button>
+                                        <input type="hidden" id="historyStartDate" value="">
+                                    </div>
+                                    <div class="date-picker-wrapper">
+                                        <button class="date-picker" data-target="historyEndDate">
+                                            <span class="date-picker-value">结束日期</span>
+                                            <i class="fa fa-calendar"></i>
+                                        </button>
+                                        <input type="hidden" id="historyEndDate" value="">
+                                    </div>
+                                    <button class="btn btn-primary" onclick="loadHistoryResults()">
+                                        <i class="fa fa-search"></i> 查询
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="historyTable">
+                                    <thead>
+                                        <tr>
+                                            <th>日期</th>
+                                            <th>标的</th>
+                                            <th>分类</th>
+                                            <th>20日动量</th>
+                                            <th>趋势强度</th>
+                                            <th>连续天数</th>
+                                            <th>量价确认</th>
+                                            <th>排名</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="pagination" id="historyPagination"></div>
                         </div>
                     </div>
 
-                    <div class="data-card">
-                        <div class="card-title">
-                            <h3>历史动量信号</h3>
-                            <div class="card-actions">
-                                <select id="historySymbol" class="form-select" onchange="loadHistoryResults()">
-                                    <option value="">全部标的</option>
-                                </select>
-                                <select id="historyCategory" class="form-select" onchange="loadHistoryResults()">
-                                    <option value="">全部分类</option>
-                                    <option value="market">大盘指标</option>
-                                    <option value="industry">行业指标</option>
-                                </select>
-                                <div class="date-picker-wrapper">
-                                    <button class="date-picker" data-target="historyStartDate">
-                                        <span class="date-picker-value">开始日期</span>
-                                        <i class="fa fa-calendar"></i>
-                                    </button>
-                                    <input type="hidden" id="historyStartDate" value="">
+                    <!-- 精选集 -->
+                    <div id="subPortfolio" class="sub-page hidden">
+                        <div class="data-card">
+                            <div class="card-title" id="portfolioFilterHeader" style="cursor: pointer; user-select: none;">
+                                <h3>
+                                    <i class="fa fa-chevron-right portfolio-toggle-icon" id="portfolioToggleIcon"></i>
+                                    筛选条件
+                                </h3>
+                                <div class="card-actions">
+                                    <span id="portfolioSelectionSummary" style="color: var(--text-muted); font-size: 13px;">选择标的构建组合，每日取动量前3</span>
                                 </div>
-                                <div class="date-picker-wrapper">
-                                    <button class="date-picker" data-target="historyEndDate">
-                                        <span class="date-picker-value">结束日期</span>
-                                        <i class="fa fa-calendar"></i>
+                            </div>
+                            <div id="portfolioFilterBody" class="portfolio-filter-body collapsed">
+                                <div id="portfolioSavedGroups" class="portfolio-saved-groups"></div>
+                                <div id="portfolioSelector" class="portfolio-selector"></div>
+                                <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                    <span style="color: var(--text-muted); font-size: 13px;">取前</span>
+                                    <select id="portfolioTopN" class="form-select" style="width: 60px;" onchange="loadPortfolioResults()">
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3" selected>3</option>
+                                        <option value="5">5</option>
+                                    </select>
+                                    <span style="color: var(--text-muted); font-size: 13px;">名</span>
+                                    <div class="date-picker-wrapper" style="margin-left: 12px;">
+                                        <button class="date-picker" data-target="portfolioStartDate">
+                                            <span class="date-picker-value">开始日期</span>
+                                            <i class="fa fa-calendar"></i>
+                                        </button>
+                                        <input type="hidden" id="portfolioStartDate" value="">
+                                    </div>
+                                    <div class="date-picker-wrapper">
+                                        <button class="date-picker" data-target="portfolioEndDate">
+                                            <span class="date-picker-value">结束日期</span>
+                                            <i class="fa fa-calendar"></i>
+                                        </button>
+                                        <input type="hidden" id="portfolioEndDate" value="">
+                                    </div>
+                                    <button class="btn btn-primary" onclick="loadPortfolioResults()">
+                                        <i class="fa fa-search"></i> 查询
                                     </button>
-                                    <input type="hidden" id="historyEndDate" value="">
+                                    <button class="btn" onclick="selectAllPortfolioSymbols()" style="background: var(--bg-light); color: var(--text-secondary);">全选</button>
+                                    <button class="btn" onclick="clearPortfolioSelection()" style="background: var(--bg-light); color: var(--text-secondary);">清空</button>
+                                    <button class="btn" onclick="savePortfolioGroup()" style="background: rgba(74,158,255,0.15); color: #4a9eff;">
+                                        <i class="fa fa-save"></i> 保存组合
+                                    </button>
                                 </div>
-                                <button class="btn btn-primary" onclick="loadHistoryResults()">
-                                    <i class="fa fa-search"></i> 查询
-                                </button>
                             </div>
                         </div>
-                        <div class="table-wrapper">
-                            <table class="data-table" id="historyTable">
-                                <thead>
-                                    <tr>
-                                        <th>日期</th>
-                                        <th>标的</th>
-                                        <th>分类</th>
-                                        <th>20日动量</th>
-                                        <th>趋势强度</th>
-                                        <th>连续天数</th>
-                                        <th>量价确认</th>
-                                        <th>排名</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
+                        <div class="data-card" style="margin-top: 16px;">
+                            <div class="card-title">
+                                <h3>组合动量 Top <span id="portfolioTopLabel">3</span> 结果</h3>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="portfolioTable">
+                                    <thead id="portfolioTableHead"></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="pagination" id="portfolioPagination"></div>
                         </div>
-                        <div class="pagination" id="historyPagination"></div>
                     </div>
                 </div>
 
@@ -246,9 +322,9 @@
                     <div class="page-header">
                         <h1 class="page-title">数据管理</h1>
                         <div class="header-tabs">
-                            <button class="header-tab" data-subtab="dataSymbols">标的管理</button>
-                            <button class="header-tab" data-subtab="dataPrices">价格数据</button>
-                        </div>
+                                <button class="header-tab active" data-subtab="dataSymbols">标的管理</button>
+                                <button class="header-tab" data-subtab="dataPrices">价格数据</button>
+                            </div>
                     </div>
 
                     <div id="dataSymbols" class="sub-page">
@@ -259,9 +335,10 @@
                                     <select id="symbolCategory" class="form-select" onchange="loadSymbols()">
                                         <option value="">全部分类</option>
                                         <option value="market">大盘指标</option>
-                                        <option value="industry">行业指标</option>
-                                    </select>
-                                    <select id="symbolStatus" class="form-select" onchange="loadSymbols()">
+                                    <option value="industry">行业指标</option>
+                                    <option value="bond">债券指标</option>
+                                </select>
+                                <select id="symbolStatus"
                                         <option value="">全部状态</option>
                                         <option value="1">启用</option>
                                         <option value="0">禁用</option>

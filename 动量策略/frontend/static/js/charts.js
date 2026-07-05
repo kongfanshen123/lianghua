@@ -173,9 +173,11 @@ function renderKlineChart(data) {
     if (!klineChart) return;
     
     if (!data || data.length === 0) {
+        klineChart.clear();
         klineChart.setOption({
+            backgroundColor: 'transparent',
             title: {
-                text: '暂无数据',
+                text: '请选择具体标的查看K线图',
                 left: 'center',
                 top: 'center',
                 textStyle: { color: DARK_COLORS.textMuted, fontSize: 14 }
@@ -373,7 +375,9 @@ function updateMomentumCharts(data) {
 function updateKlineChart(data) {
     renderKlineChart(data);
     if (klineChart) {
-        setTimeout(() => klineChart.resize(), 100);
+        // 多次 resize 确保容器从 hidden 切换到 visible 后能正确获取宽度
+        setTimeout(() => klineChart.resize(), 50);
+        setTimeout(() => klineChart.resize(), 200);
     }
 }
 
@@ -577,3 +581,15 @@ window.addEventListener('resize', () => {
         if (modalKlineChart) modalKlineChart.resize();
     }, 200);
 });
+
+// 监听侧边栏折叠/展开，触发图表 resize
+const sidebarToggle = document.querySelector('.sidebar-toggle');
+if (sidebarToggle) {
+    sidebarToggle.addEventListener('click', () => {
+        setTimeout(() => {
+            if (momentumBarChart) momentumBarChart.resize();
+            if (klineChart) klineChart.resize();
+            if (modalKlineChart) modalKlineChart.resize();
+        }, 350);
+    });
+}

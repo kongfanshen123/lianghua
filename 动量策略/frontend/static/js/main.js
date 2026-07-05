@@ -61,6 +61,15 @@ function initNavigation() {
             switchStrategy(strategy);
         });
     });
+
+    const portfolioFilterHeader = document.getElementById('portfolioFilterHeader');
+    if (portfolioFilterHeader) {
+        portfolioFilterHeader.addEventListener('click', function(e) {
+            // 避免点击日期选择器等交互元素时触发折叠
+            if (e.target.closest('.date-picker-wrapper') || e.target.closest('.form-select')) return;
+            togglePortfolioFilter();
+        });
+    }
 }
 
 function showToast(message, type = 'error') {
@@ -108,6 +117,7 @@ function switchPage(pageId) {
         loadQualityDetails();
         loadCoverage();
     } else if (pageId === 'tabData') {
+        switchSubPage('dataSymbols');
         loadSymbols();
         loadPriceSymbolOptions(true);
     }
@@ -122,6 +132,23 @@ function switchSubPage(subPageId) {
     
     if (subPageId === 'dataPrices') {
         loadPriceSymbolOptions();
+        // 切换到价格数据页时，重新初始化并 resize K线图
+        // 因为容器此前处于 hidden 状态，ECharts 初始化时宽度为 0
+        setTimeout(() => {
+            if (typeof klineChart !== 'undefined' && klineChart) {
+                klineChart.resize();
+            }
+        }, 100);
+    }
+    if (subPageId === 'subPortfolio') {
+        initPortfolioSelector();
+    }
+    if (subPageId === 'subLatest') {
+        setTimeout(() => {
+            if (typeof momentumBarChart !== 'undefined' && momentumBarChart) {
+                momentumBarChart.resize();
+            }
+        }, 100);
     }
 }
 
@@ -432,7 +459,8 @@ async function showSearchSuggestions(searchText = '') {
         
         const categoryMap = {
             'market': '大盘',
-            'industry': '行业'
+            'industry': '行业',
+            'bond': '债券'
         };
         
         const html = items.slice(0, 8).map(item => `
@@ -478,7 +506,8 @@ async function loadSymbolsWithSearch(searchText) {
         
         const categoryMap = {
             'market': '大盘指标',
-            'industry': '行业指标'
+            'industry': '行业指标',
+            'bond': '债券指标'
         };
         
         const rows = symbolsResult.data.map(item => {
@@ -531,7 +560,8 @@ async function loadSymbols() {
         
         const categoryMap = {
             'market': '大盘指标',
-            'industry': '行业指标'
+            'industry': '行业指标',
+            'bond': '债券指标'
         };
         
         const rows = symbolsResult.data.map(item => {
@@ -607,18 +637,29 @@ async function loadPrices(page = 1) {
         if (startDate) tableParams.start_date = startDate;
         if (endDate) tableParams.end_date = endDate;
         
-        const klineParams = { page: 1, page_size: 1000 };
-        if (symbol) klineParams.symbol = symbol;
-        if (startDate) klineParams.start_date = startDate;
-        if (endDate) klineParams.end_date = endDate;
+        // K线图仅在选择了具体标的时才查询，避免多标的混合渲染导致显示异常
+        const requests = [getPrices(tableParams)];
+        let klineResult = null;
+        if (symbol) {
+            const klineParams = { page: 1, page_size: 1000, symbol };
+            if (startDate) klineParams.start_date = startDate;
+            if (endDate) klineParams.end_date = endDate;
+            requests.push(getPrices(klineParams));
+        }
         
-        const [tableResult, klineResult] = await Promise.all([
-            getPrices(tableParams),
-            getPrices(klineParams)
-        ]);
+        const results = await Promise.all(requests);
+        const tableResult = results[0];
+        if (results.length > 1) {
+            klineResult = results[1];
+        }
         
         if (typeof updateKlineChart === 'function') {
-            updateKlineChart(klineResult.data || []);
+            if (klineResult && klineResult.data) {
+                updateKlineChart(klineResult.data);
+            } else {
+                // 未选择具体标的时，清空K线图并提示
+                updateKlineChart([]);
+            }
         }
         
         const dataSourceMap = {
@@ -717,7 +758,8 @@ async function loadCoverage() {
         
         const categoryMap = {
             'market': '大盘指标',
-            'industry': '行业指标'
+            'industry': '行业指标',
+            'bond': '债券指标'
         };
         
         const rows = result.data.map(item => {
@@ -768,7 +810,8 @@ async function loadLatestResultsForMomentum() {
         
         const categoryMap = {
             'market': '大盘指标',
-            'industry': '行业指标'
+            'industry': '行业指标',
+            'bond': '债券指标'
         };
         
         const rows = result.data.map(item => {
@@ -1023,7 +1066,8 @@ async function loadHistoryResults(page = 1) {
         
         const categoryMap = {
             'market': '大盘指标',
-            'industry': '行业指标'
+            'industry': '行业指标',
+            'bond': '债券指标'
         };
         
         if (!result.data || result.data.length === 0) {
@@ -1071,4 +1115,267 @@ async function loadHistoryResults(page = 1) {
         console.error('Failed to load history results:', error);
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:#f87171;">加载历史动量数据失败</td></tr>';
     }
+}
+
+
+// ===================== 精选集组合 =====================
+
+let portfolioSymbolsLoaded = false;
+let portfolioFilterCollapsed = true;
+
+function togglePortfolioFilter() {
+    portfolioFilterCollapsed = !portfolioFilterCollapsed;
+    const body = document.getElementById('portfolioFilterBody');
+    const icon = document.getElementById('portfolioToggleIcon');
+    if (portfolioFilterCollapsed) {
+        body.classList.add('collapsed');
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-right');
+    } else {
+        body.classList.remove('collapsed');
+        icon.classList.remove('fa-chevron-right');
+        icon.classList.add('fa-chevron-down');
+    }
+}
+
+function updatePortfolioSelectionSummary() {
+    const selected = getSelectedPortfolioSymbols();
+    const topN = parseInt(document.getElementById('portfolioTopN').value) || 3;
+    const summaryEl = document.getElementById('portfolioSelectionSummary');
+    if (!summaryEl) return;
+    if (selected.length === 0) {
+        summaryEl.textContent = `已选 0 个标的，每日取动量前${topN}`;
+    } else {
+        summaryEl.textContent = `已选 ${selected.length} 个标的，每日取动量前${topN}`;
+    }
+}
+
+async function initPortfolioSelector() {
+    loadPortfolioGroups();
+    if (portfolioSymbolsLoaded) return;
+    try {
+        const result = await getSymbols();
+        const container = document.getElementById('portfolioSelector');
+        if (!container) return;
+
+        const categoryMap = { 'market': '大盘', 'industry': '行业', 'bond': '债券' };
+        const sortedData = [...result.data].sort((a, b) => {
+            if (a.category === 'market' && b.category !== 'market') return -1;
+            if (a.category !== 'market' && b.category === 'market') return 1;
+            return a.symbol.localeCompare(b.symbol);
+        });
+
+        const html = sortedData.map(item => {
+            const catLabel = categoryMap[item.category] || item.category;
+            return `<label class="portfolio-chip" data-symbol="${item.symbol}">
+                <input type="checkbox" value="${item.symbol}" onchange="onPortfolioSelectionChange()">
+                <span class="portfolio-chip-label">${item.symbol} ${item.name}</span>
+                <span class="portfolio-chip-cat">${catLabel}</span>
+            </label>`;
+        }).join('');
+
+        container.innerHTML = html;
+        portfolioSymbolsLoaded = true;
+    } catch (error) {
+        console.error('Failed to init portfolio selector:', error);
+    }
+}
+
+function getSelectedPortfolioSymbols() {
+    const checkboxes = document.querySelectorAll('#portfolioSelector input[type="checkbox"]:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function onPortfolioSelectionChange() {
+    // 选择变化时只更新选中状态样式
+    document.querySelectorAll('.portfolio-chip').forEach(chip => {
+        const cb = chip.querySelector('input[type="checkbox"]');
+        chip.classList.toggle('selected', cb.checked);
+    });
+    updatePortfolioSelectionSummary();
+}
+
+function selectAllPortfolioSymbols() {
+    document.querySelectorAll('#portfolioSelector input[type="checkbox"]').forEach(cb => {
+        cb.checked = true;
+    });
+    onPortfolioSelectionChange();
+}
+
+function clearPortfolioSelection() {
+    document.querySelectorAll('#portfolioSelector input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+    });
+    onPortfolioSelectionChange();
+}
+
+async function loadPortfolioResults(page = 1) {
+    const selected = getSelectedPortfolioSymbols();
+    const topN = parseInt(document.getElementById('portfolioTopN').value) || 3;
+    const startDate = document.getElementById('portfolioStartDate') ? document.getElementById('portfolioStartDate').value : '';
+    const endDate = document.getElementById('portfolioEndDate') ? document.getElementById('portfolioEndDate').value : '';
+
+    document.getElementById('portfolioTopLabel').textContent = topN;
+    updatePortfolioSelectionSummary();
+
+    const tbody = document.getElementById('portfolioTable').querySelector('tbody');
+    const thead = document.getElementById('portfolioTableHead');
+
+    const colCount = 1 + topN; // 日期 + topN列
+
+    if (selected.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; padding:40px; color:#6b6b80;">请选择标的构建组合</td></tr>`;
+        document.getElementById('portfolioPagination').innerHTML = '';
+        return;
+    }
+
+    // 动态生成表头：日期 | Top1 | Top2 | Top3...
+    let headHtml = '<tr><th>日期</th>';
+    for (let i = 1; i <= topN; i++) {
+        const medal = i === 1 ? '🥇' : i === 2 ? '🥈' : i === 3 ? '🥉' : `#${i}`;
+        headHtml += `<th>${medal} Top${i}</th>`;
+    }
+    headHtml += '</tr>';
+    thead.innerHTML = headHtml;
+
+    tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; padding:40px; color:#6b6b80;"><i class="fa fa-spinner fa-spin"></i> 加载中...</td></tr>`;
+
+    try {
+        const result = await getPortfolioTop(selected, topN, currentStrategy, startDate || null, endDate || null, page, 50);
+
+        if (!result.data || result.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; padding:40px; color:#6b6b80;">暂无组合数据</td></tr>`;
+            document.getElementById('portfolioPagination').innerHTML = '';
+            return;
+        }
+
+        // 按交易日分组（API已按日期倒序、组内动量倒序返回）
+        const grouped = {};
+        const dateOrder = [];
+        for (const item of result.data) {
+            const d = item.trade_date;
+            if (!grouped[d]) {
+                grouped[d] = [];
+                dateOrder.push(d);
+            }
+            grouped[d].push(item);
+        }
+
+        const rows = dateOrder.map(d => {
+            const items = grouped[d];
+            const dateObj = d ? new Date(d) : null;
+            const dateDisplay = dateObj
+                ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`
+                : '-';
+
+            let cellsHtml = `<td style="font-weight: 600; white-space: nowrap;">${dateDisplay}</td>`;
+            for (let i = 1; i <= topN; i++) {
+                const item = items[i - 1];
+                if (!item) {
+                    cellsHtml += '<td style="color: var(--text-muted);">-</td>';
+                } else {
+                    const momentumVal = parseFloat(item.momentum_20d) || 0;
+                    const momentumColor = momentumVal >= 0 ? 'color: var(--accent-green);' : 'color: var(--accent-red);';
+                    const rankBadgeColor = i === 1
+                        ? 'border-left: 3px solid #fbbf24;'
+                        : i === 2
+                            ? 'border-left: 3px solid #9ca3af;'
+                            : i === 3
+                                ? 'border-left: 3px solid #d97706;'
+                                : '';
+                    cellsHtml += `<td style="${rankBadgeColor} padding-left: 10px;">
+                        <div style="font-weight: 600; margin-bottom: 2px; font-size: 14px;">${item.name}</div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <span style="${momentumColor} font-weight: 600; font-size: 13px;">${formatMomentum(item.momentum_20d)}</span>
+                            <span style="color: ${getTrendColor(item.trend_strength)}; font-size: 12px;">${item.trend_strength}</span>
+                            ${(item.consecutive_days || 0) > 0
+                                ? `<span style="font-size: 11px; color: var(--text-muted);">${item.consecutive_days}日</span>`
+                                : ''}
+                            <span style="font-size: 11px; color: var(--text-muted); opacity: 0.6;">${item.symbol}</span>
+                        </div>
+                    </td>`;
+                }
+            }
+            return `<tr>${cellsHtml}</tr>`;
+        });
+
+        tbody.innerHTML = rows.join('');
+        renderPagination(result.total, page, 50, 'portfolioPagination', '', loadPortfolioResults);
+    } catch (error) {
+        console.error('Failed to load portfolio results:', error);
+        tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; padding:40px; color:#f87171;">加载组合数据失败</td></tr>`;
+    }
+}
+
+// ===================== 精选集组合保存/加载 =====================
+
+function getPortfolioGroups() {
+    try {
+        return JSON.parse(localStorage.getItem('portfolio_groups') || '[]');
+    } catch (e) {
+        return [];
+    }
+}
+
+function setPortfolioGroups(groups) {
+    localStorage.setItem('portfolio_groups', JSON.stringify(groups));
+}
+
+function loadPortfolioGroups() {
+    const container = document.getElementById('portfolioSavedGroups');
+    if (!container) return;
+    const groups = getPortfolioGroups();
+    if (groups.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    const html = groups.map((g, idx) => `
+        <div class="portfolio-group-chip">
+            <span class="portfolio-group-name" onclick="applyPortfolioGroup(${idx})">${g.name}</span>
+            <span class="portfolio-group-count">${g.symbols.length}只</span>
+            <button class="portfolio-group-delete" onclick="deletePortfolioGroup(${idx})" title="删除"><i class="fa fa-times"></i></button>
+        </div>
+    `).join('');
+    container.innerHTML = `<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">${html}</div>`;
+}
+
+function savePortfolioGroup() {
+    const selected = getSelectedPortfolioSymbols();
+    if (selected.length === 0) {
+        showToast('请先选择标的', 'error');
+        return;
+    }
+    const name = prompt('请输入组合名称：', `组合${getPortfolioGroups().length + 1}`);
+    if (!name) return;
+    const groups = getPortfolioGroups();
+    groups.push({ name, symbols: selected, topN: parseInt(document.getElementById('portfolioTopN').value) || 3 });
+    setPortfolioGroups(groups);
+    loadPortfolioGroups();
+    showToast(`组合「${name}」已保存`, 'success');
+}
+
+function applyPortfolioGroup(idx) {
+    const groups = getPortfolioGroups();
+    const group = groups[idx];
+    if (!group) return;
+    clearPortfolioSelection();
+    group.symbols.forEach(sym => {
+        const cb = document.querySelector(`#portfolioSelector input[value="${sym}"]`);
+        if (cb) cb.checked = true;
+    });
+    if (group.topN) {
+        document.getElementById('portfolioTopN').value = group.topN;
+    }
+    onPortfolioSelectionChange();
+    loadPortfolioResults();
+}
+
+function deletePortfolioGroup(idx) {
+    const groups = getPortfolioGroups();
+    const name = groups[idx]?.name || '';
+    groups.splice(idx, 1);
+    setPortfolioGroups(groups);
+    loadPortfolioGroups();
+    showToast(`组合「${name}」已删除`, 'success');
 }

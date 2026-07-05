@@ -100,16 +100,18 @@ class SinaFetcher(BaseFetcher):
 
     def _fetch_sina_data(self, sina_symbol: str, datalen: int = 500) -> Optional:
         import pandas as pd
-        
+
         params = {
             'symbol': sina_symbol,
             'scale': '240',
             'ma': '5,10,20',
             'datalen': str(datalen)
         }
-        
+
         for attempt in range(self.max_retry):
             try:
+                # 每次请求前等待，避免被频控
+                time.sleep(self.request_interval)
                 response = self.session.get(self.BASE_URL, params=params, timeout=30)
                 if response.status_code == 200:
                     data = response.json()
@@ -135,9 +137,9 @@ class SinaFetcher(BaseFetcher):
         if symbol.startswith(("sh", "sz")):
             return symbol
         
-        index_codes = {"000001", "000300", "000905", "000852", "399006", "399001"}
+        index_codes = {"000001", "000300", "000905", "000852", "000688", "932000", "399006", "399001"}
         if symbol in index_codes:
-            if symbol.startswith("0"):
+            if symbol.startswith(("0", "9")):
                 return f"sh{symbol}"
             elif symbol.startswith("3"):
                 return f"sz{symbol}"

@@ -94,15 +94,24 @@ def main_cli():
             else:
                 print(f"Fetch failed: {message}")
     elif args.command == "calculate":
-        from app.pipeline import calculate_strategy
+        from app.pipeline import calculate_strategy, calculate_weighted_score
         from app.database import session_scope
+        from app.utils.date_utils import is_trading_day
         trade_date = parse_date(args.date)
+        if not is_trading_day(trade_date):
+            print(f"{trade_date} 不是交易日（周末或节假日），跳过计算")
+            return
         with session_scope() as session:
             success, message = calculate_strategy(session, trade_date)
             if success:
-                print(f"Calculate completed: {message}")
+                print(f"Momentum: {message}")
             else:
-                print(f"Calculate failed: {message}")
+                print(f"Momentum failed: {message}")
+            success2, message2 = calculate_weighted_score(session, trade_date)
+            if success2:
+                print(f"WeightedScore: {message2}")
+            else:
+                print(f"WeightedScore failed: {message2}")
     elif args.command == "push":
         from app.pipeline import push_results
         from app.database import session_scope

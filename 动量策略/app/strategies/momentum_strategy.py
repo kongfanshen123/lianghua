@@ -91,18 +91,50 @@ class MomentumStrategy(BaseStrategy):
         else:
             return "寒"
 
-    def calculate_consecutive_days(self, current_momentum: float, historical_momentums: List[float]) -> int:
-        """计算当前趋势方向的连续天数（含当天）。
-        以0为分界线，从当前日期往前连续统计同方向动量的天数。
+    def calculate_consecutive_days(self, current_momentum: float,
+                                    historical_momentums: List[float],
+                                    current_date: date = None,
+                                    historical_dates: List[date] = None) -> int:
+        """计算当前趋势方向的连续交易日天数（含当天）。
+
+        以0为分界线，从当前日期往前连续统计同方向动量的交易日天数。
+        当提供了日期信息时，会验证交易日连续性——遇到数据断档
+        （非相邻交易日）即停止计数，避免将不连续的数据误判为连续。
+
+        Args:
+            current_momentum: 当日动量值
+            historical_momentums: 历史动量值列表（按日期升序）
+            current_date: 当日日期（可选，用于交易日连续性验证）
+            historical_dates: 历史日期列表（可选，与 historical_momentums 一一对应）
+
+        Returns:
+            连续同方向交易日天数（含当天）
         """
+        from app.utils.date_utils import are_consecutive_trading_days
+
         current_direction = current_momentum > 0
         consecutive = 1  # 当天计入
-        for prev_momentum in reversed(historical_momentums):
+
+        # 逆序遍历历史动量（从最近一天开始）
+        for i in range(len(historical_momentums) - 1, -1, -1):
+            prev_momentum = historical_momentums[i]
             prev_direction = prev_momentum > 0
-            if prev_direction == current_direction:
-                consecutive += 1
-            else:
+
+            # 方向不一致则停止
+            if prev_direction != current_direction:
                 break
+
+            # 如果提供了日期信息，验证交易日连续性
+            if current_date is not None and historical_dates is not None:
+                if i < len(historical_dates):
+                    prev_date = historical_dates[i]
+                    # 验证前一个日期是否是当前日期的前一个交易日
+                    if not are_consecutive_trading_days(prev_date, current_date):
+                        break  # 数据断档，停止计数
+                    current_date = prev_date  # 向前推进
+
+            consecutive += 1
+
         return consecutive
 
     def _confirm_volume(self, prices: List[Dict]) -> tuple:

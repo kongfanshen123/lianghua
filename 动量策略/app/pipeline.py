@@ -252,6 +252,11 @@ def validate_data(session, trade_date: date) -> tuple:
 
 
 def calculate_strategy(session, trade_date: date) -> tuple:
+    # 防御：非交易日不生成策略结果
+    if not is_trading_day(trade_date):
+        logger.info(f"{trade_date} is not a trading day, skipping strategy calculation")
+        return True, f"{trade_date} is not a trading day, skipped"
+
     logger.info(f"Calculating strategy for {trade_date}")
     strategy = MomentumStrategy()
 
@@ -293,7 +298,11 @@ def calculate_strategy(session, trade_date: date) -> tuple:
                 StrategyResult.status == "valid"
             ).order_by(StrategyResult.trade_date.asc()).limit(500).all()
             historical_momentums = [float(r.momentum_20d) for r in prev_results]
-            result.consecutive_days = strategy.calculate_consecutive_days(result.momentum_20d, historical_momentums)
+            historical_dates = [r.trade_date for r in prev_results]
+            result.consecutive_days = strategy.calculate_consecutive_days(
+                result.momentum_20d, historical_momentums,
+                current_date=trade_date, historical_dates=historical_dates
+            )
 
     ranked_results = strategy.rank(results)
     ranked_results = strategy.calculate_ranking_change(ranked_results, previous_rank_map)
@@ -301,7 +310,8 @@ def calculate_strategy(session, trade_date: date) -> tuple:
     for result in ranked_results:
         existing = session.query(StrategyResult).filter(
             StrategyResult.symbol_id == result.symbol_id,
-            StrategyResult.trade_date == result.trade_date
+            StrategyResult.trade_date == result.trade_date,
+            StrategyResult.strategy_type == "momentum"
         ).first()
 
         if existing:
@@ -313,6 +323,7 @@ def calculate_strategy(session, trade_date: date) -> tuple:
             existing.trend_strength = result.trend_strength
             existing.consecutive_days = result.consecutive_days
             existing.status = result.status
+            existing.strategy_type = "momentum"
         else:
             db_result = StrategyResult(
                 symbol_id=result.symbol_id,
@@ -324,7 +335,8 @@ def calculate_strategy(session, trade_date: date) -> tuple:
                 ranking_change=result.ranking_change,
                 trend_strength=result.trend_strength,
                 consecutive_days=result.consecutive_days,
-                status=result.status
+                status=result.status,
+                strategy_type="momentum"
             )
             session.add(db_result)
 
@@ -336,6 +348,11 @@ def calculate_strategy(session, trade_date: date) -> tuple:
 
 def calculate_weighted_score(session, trade_date: date) -> tuple:
     """计算加权动量评分策略（对数价格+线性回归+R²）。"""
+    # 防御：非交易日不生成策略结果
+    if not is_trading_day(trade_date):
+        logger.info(f"{trade_date} is not a trading day, skipping weighted score calculation")
+        return True, f"{trade_date} is not a trading day, skipped"
+
     logger.info(f"Calculating weighted score for {trade_date}")
     strategy = WeightedScoreStrategy()
 
@@ -517,8 +534,9 @@ def send_alert(message: str) -> None:
 def backfill_data(days: int = 60, symbol_filter: str = None) -> bool:
     logger.info(f"Starting backfill for last {days} days{' for ' + symbol_filter if symbol_filter else ''}")
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days)
+    from app.utils.date_utils import get_expected_latest_trade_date, get_n_trading_days_ago
+    end_date = get_expected_latest_trade_date()
+    start_date = get_n_trading_days_ago(end_date, days)
 
     try:
         with session_scope() as session:
@@ -670,11 +688,14 @@ def backfill_momentum(symbol_filter: str = None) -> bool:
                 # 计算连续趋势天数
                 sorted_dates = sorted(results_by_date.keys())
                 all_momentums = [results_by_date[d].momentum_20d for d in sorted_dates]
+                all_trade_dates = [datetime.strptime(d, "%Y-%m-%d").date() for d in sorted_dates]
                 for i, date_str in enumerate(sorted_dates):
                     result = results_by_date[date_str]
                     if result.status == "valid":
                         result.consecutive_days = strategy.calculate_consecutive_days(
-                            result.momentum_20d, all_momentums[:i]
+                            result.momentum_20d, all_momentums[:i],
+                            current_date=all_trade_dates[i],
+                            historical_dates=all_trade_dates[:i]
                         )
 
                 # 存储结果（不计算排名，排名在后续单独计算）

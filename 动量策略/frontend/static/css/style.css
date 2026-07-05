@@ -1282,4 +1282,138 @@ body {
         flex-direction: column;
         align-items: flex-start;
     }
+
+    .chart-container.large {
+        height: 300px;
+    }
+
+    .chart-container {
+        height: 240px;
+    }
+}
+
+/* ===================== 精选集组合 ===================== */
+.portfolio-filter-body {
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+    max-height: 1000px;
+    opacity: 1;
+}
+
+.portfolio-filter-body.collapsed {
+    max-height: 0;
+    opacity: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.portfolio-toggle-icon {
+    margin-right: 8px;
+    transition: transform 0.2s ease;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.portfolio-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.portfolio-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 13px;
+    user-select: none;
+}
+
+.portfolio-chip:hover {
+    border-color: var(--accent-blue);
+    background: rgba(74, 158, 255, 0.08);
+}
+
+.portfolio-chip.selected {
+    border-color: var(--accent-blue);
+    background: rgba(74, 158, 255, 0.15);
+}
+
+.portfolio-chip input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent-blue);
+    margin: 0;
+}
+
+.portfolio-chip-label {
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.portfolio-chip-cat {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-light);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.portfolio-group-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    background: rgba(74, 158, 255, 0.08);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.portfolio-group-chip:hover {
+    background: rgba(74, 158, 255, 0.18);
+    border-color: var(--accent-blue);
+}
+
+.portfolio-group-name {
+    color: #4a9eff;
+    font-weight: 600;
+}
+
+.portfolio-group-count {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.portfolio-group-delete {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 12px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.portfolio-group-delete:hover {
+    opacity: 1;
+    color: var(--accent-red);
+}
+
+#portfolioTable td {
+    vertical-align: top;
+    padding: 10px 12px;
+}
+
+#portfolioTable th {
+    white-space: nowrap;
 }

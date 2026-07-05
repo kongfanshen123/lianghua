@@ -391,7 +391,8 @@ async def get_results_category_summary(
     
     category_map = {
         'market': '大盘指标',
-        'industry': '行业指标'
+        'industry': '行业指标',
+        'bond': '债券指标'
     }
     
     summary = []
@@ -432,9 +433,10 @@ async def get_quality_summary():
     latest_date = cursor.fetchone()[0]
     summary["latest_date"] = latest_date
     
-    today = date.today()
+    from app.utils.date_utils import get_expected_latest_trade_date
+    expected_latest = get_expected_latest_trade_date()
     latest_date_obj = datetime.strptime(latest_date, "%Y-%m-%d").date()
-    summary["days_since_latest"] = (today - latest_date_obj).days
+    summary["days_since_latest"] = (expected_latest - latest_date_obj).days
     
     cursor.execute("""
         SELECT s.symbol, s.name, COUNT(*) as record_count
@@ -652,8 +654,9 @@ async def get_quality_trend(days: int = 30):
     conn = get_db()
     cursor = conn.cursor()
     
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days)
+    from app.utils.date_utils import get_expected_latest_trade_date, get_n_trading_days_ago
+    end_date = get_expected_latest_trade_date()
+    start_date = get_n_trading_days_ago(end_date, days)
     
     cursor.execute("""
         SELECT dp.trade_date, COUNT(DISTINCT dp.symbol_id) as symbol_count, COUNT(*) as record_count
@@ -828,23 +831,92 @@ async def get_system_status():
     latest_result_date = cursor.fetchone()[0]
     status["latest_result_date"] = latest_result_date
     
+    # 使用最近交易日作为基准，避免周末/节假日误报"数据延迟"
+    from app.utils.date_utils import get_expected_latest_trade_date
+    expected_latest = get_expected_latest_trade_date()
+
     if latest_price_date:
-        today = date.today()
         latest_date_obj = datetime.strptime(latest_price_date, "%Y-%m-%d").date()
-        days_diff = (today - latest_date_obj).days
+        days_diff = (expected_latest - latest_date_obj).days
         status["price_delay_days"] = days_diff
-        status["price_status"] = "up_to_date" if days_diff <= 1 else "delayed"
+        status["price_status"] = "up_to_date" if days_diff <= 0 else "delayed"
     
     if latest_result_date:
-        today = date.today()
         latest_date_obj = datetime.strptime(latest_result_date, "%Y-%m-%d").date()
-        days_diff = (today - latest_date_obj).days
+        days_diff = (expected_latest - latest_date_obj).days
         status["result_delay_days"] = days_diff
-        status["result_status"] = "up_to_date" if days_diff <= 1 else "delayed"
+        status["result_status"] = "up_to_date" if days_diff <= 0 else "delayed"
     
     conn.close()
     
     return status
+
+
+# ===================== 精选集组合 =====================
+
+@app.get("/api/portfolio/top")
+async def get_portfolio_top(
+    symbols: str = Query(..., description="逗号分隔的标的代码列表"),
+    top_n: int = Query(3, description="每个交易日取动量前N名"),
+    strategy: str = Query("momentum", description="策略类型"),
+    start_date: str = Query(None, description="开始日期"),
+    end_date: str = Query(None, description="结束日期"),
+    page: int = Query(1, description="页码"),
+    page_size: int = Query(50, description="每页大小")
+):
+    """精选集组合：统计指定标的组合内每日动量 Top N，按时间倒序返回。"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        return {"data": [], "total": 0, "page": page, "page_size": page_size}
+
+    placeholders = ",".join("?" * len(symbol_list))
+
+    query = f"""
+        SELECT sr.*, s.symbol, s.name, s.category
+        FROM strategy_results sr
+        JOIN symbols s ON sr.symbol_id = s.id
+        WHERE sr.status = 'valid' AND sr.strategy_type = ?
+          AND s.symbol IN ({placeholders})
+    """
+    params = [strategy] + symbol_list
+
+    if start_date:
+        query += " AND sr.trade_date >= ?"
+        params.append(start_date)
+    if end_date:
+        query += " AND sr.trade_date <= ?"
+        params.append(end_date)
+
+    query += " ORDER BY sr.trade_date DESC, sr.momentum_20d DESC"
+
+    cursor.execute(query, params)
+    all_rows = cursor.fetchall()
+
+    # 按交易日分组，每组取 Top N
+    from collections import OrderedDict
+    grouped = OrderedDict()
+    for row in all_rows:
+        d = row["trade_date"]
+        if d not in grouped:
+            grouped[d] = []
+        grouped[d].append(dict(row))
+
+    filtered = []
+    for d, items in grouped.items():
+        items.sort(key=lambda x: float(x["momentum_20d"]), reverse=True)
+        for rank, item in enumerate(items[:top_n], 1):
+            item["portfolio_rank"] = rank
+            filtered.append(item)
+
+    total = len(filtered)
+    start_idx = (page - 1) * page_size
+    paged = filtered[start_idx:start_idx + page_size]
+
+    conn.close()
+    return {"data": paged, "total": total, "page": page, "page_size": page_size}
 
 
 app.mount("/static", StaticFiles(directory=os.path.join(FRONTEND_DIR, "static")), name="static")
